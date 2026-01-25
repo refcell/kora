@@ -1,0 +1,20 @@
+[package]
+name = "kora"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+kora-cli.workspace = true
+kora-primitives.workspace = true
+
+clap.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+eyre.workspace = true
+
+[lints]
+workspace = true

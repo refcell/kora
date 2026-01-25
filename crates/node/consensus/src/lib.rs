@@ -9,10 +9,9 @@ pub use block::KoraBlock;
 mod error;
 pub use error::ConsensusError;
 
-mod execution;
-pub use execution::ExecutionOutcome;
-
 mod traits;
-pub use traits::{BlockExecutor, Digest, Mempool, SeedTracker, Snapshot, SnapshotStore, TxId};
+// Re-export executor types
+pub use kora_executor::{BlockExecutor, ExecutionOutcome};
+pub use traits::{Digest, Mempool, SeedTracker, Snapshot, SnapshotStore, TxId};
 
 pub mod components;

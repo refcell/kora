@@ -9,6 +9,7 @@ description = "Consensus application layer for Kora"
 
 [dependencies]
 # Local crates
+kora-executor = { path = "../executor" }
 kora-traits = { path = "../../storage/traits" }
 kora-qmdb = { path = "../../storage/qmdb" }
 

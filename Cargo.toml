@@ -48,6 +48,7 @@ codegen-units = 1
 # Local crates
 kora-cli = { path = "crates/utilities/cli" }
 kora-consensus = { path = "crates/node/consensus" }
+kora-executor = { path = "crates/node/executor" }
 kora-handlers = { path = "crates/storage/handlers" }
 kora-qmdb = { path = "crates/storage/qmdb" }
 kora-traits = { path = "crates/storage/traits" }
@@ -91,3 +92,6 @@ eyre = "0.6"
 rand = "0.8"
 bytes = "1"
 hex = "0.4"
+
+# Testing
+rstest = "0.24"

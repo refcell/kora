@@ -2,12 +2,11 @@
 
 use std::collections::BTreeSet;
 
-use alloy_consensus::Header;
 use alloy_primitives::B256;
 use kora_qmdb::ChangeSet;
 use kora_traits::StateDb;
 
-use crate::{ConsensusError, ExecutionOutcome, KoraBlock};
+use crate::ConsensusError;
 
 /// Transaction identifier type.
 pub type TxId = B256;
@@ -112,27 +111,6 @@ pub trait SeedTracker: Clone + Send + Sync + 'static {
 
     /// Insert a seed for a digest.
     fn insert(&self, digest: Digest, seed: B256);
-}
-
-/// Executes transactions against a state database.
-///
-/// Abstracts the EVM execution layer to allow different backends.
-pub trait BlockExecutor<S: StateDb>: Clone + Send + Sync + 'static {
-    /// Transaction type accepted for execution.
-    type Tx: Clone + Send + Sync + 'static;
-
-    /// Execute a batch of transactions against the given state.
-    ///
-    /// Returns the execution outcome containing state changes.
-    fn execute(
-        &self,
-        state: &S,
-        header: &Header,
-        txs: &[Self::Tx],
-    ) -> Result<ExecutionOutcome, ConsensusError>;
-
-    /// Validate a block's transactions without full execution.
-    fn validate(&self, block: &KoraBlock) -> Result<(), ConsensusError>;
 }
 
 #[cfg(test)]

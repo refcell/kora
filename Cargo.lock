@@ -1585,8 +1585,22 @@ dependencies = [
  "alloy-consensus",
  "alloy-primitives",
  "alloy-rlp",
+ "kora-executor",
  "kora-qmdb",
  "kora-traits",
+ "rstest",
+ "thiserror",
+]
+
+[[package]]
+name = "kora-executor"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-primitives",
+ "kora-qmdb",
+ "kora-traits",
+ "revm",
  "rstest",
  "thiserror",
 ]

@@ -1,5 +1,5 @@
 [workspace]
-members = ["bin/*", "crates/network/*", "crates/node/*", "crates/storage/*", "crates/utilities/*"]
+members = ["bin/*", "crates/network/*", "crates/node/*", "crates/storage/*", "crates/utilities/*", "examples/*"]
 default-members = ["bin/kora"]
 resolver = "2"
 
@@ -57,19 +57,19 @@ kora-handlers = { path = "crates/storage/handlers" }
 kora-qmdb = { path = "crates/storage/qmdb" }
 kora-traits = { path = "crates/storage/traits" }
 
-# Commonware
-commonware-broadcast = "0.0.65"
-commonware-codec = "0.0.65"
-commonware-consensus = "0.0.65"
-commonware-cryptography = "0.0.65"
-commonware-macros = "0.0.65"
-commonware-p2p = "0.0.65"
-commonware-parallel = "0.0.65"
-commonware-resolver = "0.0.65"
-commonware-runtime = "0.0.65"
-commonware-storage = "0.0.65"
-commonware-stream = "0.0.65"
-commonware-utils = "0.0.65"
+# Commonware (path dependencies for local development with revm features)
+commonware-broadcast = { path = "../commonware/broadcast" }
+commonware-codec = { path = "../commonware/codec" }
+commonware-consensus = { path = "../commonware/consensus" }
+commonware-cryptography = { path = "../commonware/cryptography" }
+commonware-macros = { path = "../commonware/macros" }
+commonware-p2p = { path = "../commonware/p2p" }
+commonware-parallel = { path = "../commonware/parallel" }
+commonware-resolver = { path = "../commonware/resolver" }
+commonware-runtime = { path = "../commonware/runtime" }
+commonware-storage = { path = "../commonware/storage" }
+commonware-stream = { path = "../commonware/stream" }
+commonware-utils = { path = "../commonware/utils" }
 
 # Alloy
 alloy-primitives = "1.0"

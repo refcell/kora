@@ -1,0 +1,37 @@
+[package]
+name = "kora-revm-example"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "REVM-based example chain running on threshold-simplex (simplex + threshold BLS signatures)."
+
+[lints]
+workspace = true
+
+[dependencies]
+# EVM execution
+alloy-evm = { version = "=0.25.1", default-features = false, features = ["std"] }
+anyhow = "1"
+bytes.workspace = true
+clap.workspace = true
+commonware-broadcast.workspace = true
+commonware-codec.workspace = true
+commonware-consensus.workspace = true
+commonware-cryptography.workspace = true
+commonware-p2p.workspace = true
+commonware-parallel.workspace = true
+commonware-runtime.workspace = true
+commonware-storage.workspace = true
+commonware-utils.workspace = true
+futures.workspace = true
+libc = "0.2"
+rand.workspace = true
+revm = { version = "33.1.0", default-features = false, features = ["std", "asyncdb"] }
+thiserror.workspace = true
+tracing.workspace = true
+
+[[bin]]
+name = "kora-revm-example"
+bench = false

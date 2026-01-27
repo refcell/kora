@@ -2,6 +2,10 @@
 default:
     @just --list
 
+# Runs examples
+examples:
+    cargo run --example kora-revm-example
+
 # Run the full CI suite
 ci: fmt clippy test deny
 

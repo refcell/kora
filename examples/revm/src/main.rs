@@ -1,5 +1,30 @@
+//! REVM-based example chain driven by threshold-simplex.
+//!
+//! This example uses `alloy-evm` as the integration layer above `revm` and keeps the execution
+//! backend generic over the database trait boundary (`Database` + `DatabaseCommit`).
+
 use clap::{Arg, Command, value_parser};
-use kora_revm_example::{SimConfig, simulate};
+
+pub mod application;
+pub use application::execution::{
+    CHAIN_ID, ExecutionOutcome, SEED_PRECOMPILE_ADDRESS_BYTES, evm_env, execute_txs,
+    seed_precompile_address,
+};
+
+pub type ConsensusDigest = commonware_cryptography::sha256::Digest;
+pub type PublicKey = commonware_cryptography::ed25519::PublicKey;
+pub(crate) type FinalizationEvent = (u32, ConsensusDigest);
+
+pub mod domain;
+pub use domain::{
+    AccountChange, Block, BlockCfg, BlockId, BootstrapConfig, StateChanges, StateChangesCfg,
+    StateRoot, Tx, TxCfg, TxId, block_id,
+};
+
+pub mod qmdb;
+
+pub mod simulation;
+pub use simulation::{SimConfig, SimOutcome, simulate};
 
 fn main() -> anyhow::Result<()> {
     let matches = Command::new("kora-revm-example")

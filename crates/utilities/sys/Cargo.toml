@@ -1,0 +1,14 @@
+[package]
+name = "kora-sys"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "System utilities for Kora"
+
+[lints]
+workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true

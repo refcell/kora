@@ -3330,7 +3330,7 @@ dependencies = [
  "kora-ledger",
  "kora-overlay",
  "kora-reporters",
- "libc",
+ "kora-sys",
  "prometheus-client",
  "rand 0.8.5",
  "tracing",
@@ -3363,6 +3363,13 @@ dependencies = [
  "commonware-runtime",
  "commonware-utils",
  "rand_core 0.6.4",
+]
+
+[[package]]
+name = "kora-sys"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

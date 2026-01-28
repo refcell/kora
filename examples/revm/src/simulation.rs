@@ -14,6 +14,7 @@ use commonware_runtime::{Metrics as _, Runner as _, tokio};
 use commonware_utils::{TryCollect as _, ordered::Set};
 use futures::{StreamExt as _, channel::mpsc};
 use kora_domain::{BootstrapConfig, ConsensusDigest, FinalizationEvent, StateRoot};
+use kora_sys::FileLimitHandler;
 
 use crate::{
     application::{
@@ -81,30 +82,9 @@ impl NodeEnvironment for SimEnvironment<'_> {
     }
 }
 
-#[cfg(unix)]
-fn raise_open_file_limit() {
-    use libc::{RLIMIT_NOFILE, getrlimit, rlimit, setrlimit};
-
-    // Best effort: avoid hitting low per-process fd limits during simulations.
-    // SAFETY: best-effort process limit adjustment with well-defined libc calls.
-    unsafe {
-        let mut limits = rlimit { rlim_cur: 0, rlim_max: 0 };
-        if getrlimit(RLIMIT_NOFILE, &mut limits) != 0 {
-            return;
-        }
-        if limits.rlim_cur < limits.rlim_max {
-            let updated = rlimit { rlim_cur: limits.rlim_max, rlim_max: limits.rlim_max };
-            let _ = setrlimit(RLIMIT_NOFILE, &updated);
-        }
-    }
-}
-
-#[cfg(not(unix))]
-fn raise_open_file_limit() {}
-
 /// Run the multi-node simulation and return the final outcome.
 pub(crate) fn simulate(cfg: SimConfig) -> anyhow::Result<SimOutcome> {
-    raise_open_file_limit();
+    FileLimitHandler::new().raise();
     // Tokio runtime required for WrapDatabaseAsync in the QMDB adapter.
     let executor = tokio::Runner::default();
     executor.start(|context| async move { run_sim(context, cfg).await })

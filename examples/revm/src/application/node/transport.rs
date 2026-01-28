@@ -6,22 +6,24 @@ use std::{
 use commonware_runtime::{self, tokio};
 use governor::clock::{Clock as GovernorClock, ReasonablyRealtime};
 use prometheus_client::registry::Metric;
-use rand::rngs::OsRng;
+use rand::{RngCore, rngs::OsRng};
 
 /// Tokio context wrapper that forces simulated networking to bind on localhost.
 pub(crate) struct TransportContext {
     inner: tokio::Context,
     force_base_addr: bool,
+    port_offset: u16,
 }
 
-const PORT_OFFSET: u16 = 40_000;
+const PORT_BASE_MIN: u16 = 40_000;
+const PORT_BASE_MAX: u16 = 65_535 - 1_024;
 
-fn remap_socket(socket: SocketAddr) -> SocketAddr {
+fn remap_socket(socket: SocketAddr, port_offset: u16) -> SocketAddr {
     let port = socket.port();
     if port >= 1024 {
         return socket;
     }
-    let remapped = port + PORT_OFFSET;
+    let remapped = port + port_offset;
     match socket.ip() {
         IpAddr::V4(ip) => SocketAddr::new(IpAddr::V4(ip), remapped),
         IpAddr::V6(ip) => SocketAddr::new(IpAddr::V6(ip), remapped),
@@ -30,13 +32,16 @@ fn remap_socket(socket: SocketAddr) -> SocketAddr {
 
 impl TransportContext {
     pub(crate) fn new(inner: tokio::Context) -> Self {
-        Self { inner, force_base_addr: true }
+        let mut rng = OsRng;
+        let span = u32::from(PORT_BASE_MAX - PORT_BASE_MIN + 1);
+        let base = PORT_BASE_MIN + (rng.next_u32() % span) as u16;
+        Self { inner, force_base_addr: true, port_offset: base }
     }
 }
 
 impl Clone for TransportContext {
     fn clone(&self) -> Self {
-        Self { inner: self.inner.clone(), force_base_addr: false }
+        Self { inner: self.inner.clone(), force_base_addr: false, port_offset: self.port_offset }
     }
 }
 
@@ -73,7 +78,11 @@ impl commonware_runtime::Metrics for TransportContext {
     }
 
     fn with_label(&self, label: &str) -> Self {
-        Self { inner: self.inner.with_label(label), force_base_addr: false }
+        Self {
+            inner: self.inner.with_label(label),
+            force_base_addr: false,
+            port_offset: self.port_offset,
+        }
     }
 
     fn register<N: Into<String>, H: Into<String>>(&self, name: N, help: H, metric: impl Metric) {
@@ -107,8 +116,9 @@ impl commonware_runtime::Spawner for TransportContext {
         Fut: std::future::Future<Output = T> + Send + 'static,
         T: Send + 'static,
     {
-        self.inner.spawn(|context| {
-            let context = TransportContext { inner: context, force_base_addr: false };
+        let port_offset = self.port_offset;
+        self.inner.spawn(move |context| {
+            let context = TransportContext { inner: context, force_base_addr: false, port_offset };
             f(context)
         })
     }
@@ -134,7 +144,7 @@ impl commonware_runtime::Network for TransportContext {
         socket: SocketAddr,
     ) -> impl std::future::Future<Output = Result<Self::Listener, commonware_runtime::Error>> + Send
     {
-        self.inner.bind(remap_socket(socket))
+        self.inner.bind(remap_socket(socket, self.port_offset))
     }
 
     fn dial(
@@ -146,7 +156,7 @@ impl commonware_runtime::Network for TransportContext {
             commonware_runtime::Error,
         >,
     > + Send {
-        self.inner.dial(remap_socket(socket))
+        self.inner.dial(remap_socket(socket, self.port_offset))
     }
 }
 

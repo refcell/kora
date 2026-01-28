@@ -8,7 +8,6 @@ mod cli;
 mod config;
 mod demo;
 mod outcome;
-mod qmdb;
 mod simulation;
 mod tx;
 

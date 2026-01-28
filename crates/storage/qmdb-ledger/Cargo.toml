@@ -1,0 +1,31 @@
+[package]
+name = "kora-qmdb-ledger"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "QMDB-backed ledger adapter for Kora"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Local crates
+kora-backend = { path = "../backend" }
+kora-handlers = { path = "../handlers" }
+kora-qmdb = { path = "../qmdb" }
+kora-traits = { path = "../traits" }
+kora-domain = { path = "../../node/domain" }
+
+# Commonware
+commonware-runtime.workspace = true
+
+# Alloy
+alloy-primitives.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# Async
+tokio.workspace = true

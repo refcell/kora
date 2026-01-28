@@ -57,11 +57,22 @@ async fn handle_finalized_update(
                     };
                 let merged_changes =
                     parent_snapshot.state.merge_changes(execution.outcome.changes.clone());
-                if execution.state_root != block.state_root {
+                let state_root = match state
+                    .compute_root_from_store(parent_digest, execution.outcome.changes.clone())
+                    .await
+                {
+                    Ok(root) => root,
+                    Err(err) => {
+                        error!(?digest, error = ?err, "failed to compute qmdb root");
+                        ack.acknowledge();
+                        return;
+                    }
+                };
+                if state_root != block.state_root {
                     warn!(
                         ?digest,
                         expected = ?block.state_root,
-                        computed = ?execution.state_root,
+                        computed = ?state_root,
                         "state root mismatch for finalized block"
                     );
                     ack.acknowledge();
@@ -73,7 +84,7 @@ async fn handle_finalized_update(
                         digest,
                         parent_digest,
                         next_state,
-                        execution.state_root,
+                        state_root,
                         execution.outcome.changes,
                         &block.txs,
                     )

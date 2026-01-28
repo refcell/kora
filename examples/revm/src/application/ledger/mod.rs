@@ -24,9 +24,8 @@ use kora_domain::{
     Block, BlockId, ConsensusDigest, LedgerEvent, LedgerEvents, StateRoot, Tx, TxId,
 };
 use kora_overlay::OverlayState;
-use kora_traits::StateDbRead;
-
-use crate::qmdb::{QmdbChangeSet, QmdbConfig, QmdbLedger, QmdbState};
+use kora_qmdb_ledger::{QmdbChangeSet, QmdbConfig, QmdbLedger, QmdbState};
+use kora_traits::{StateDbRead, StateDbWrite};
 
 type LedgerSnapshot = Snapshot<OverlayState<QmdbState>>;
 
@@ -161,6 +160,20 @@ impl LedgerView {
         inner.snapshots.insert(digest, Snapshot::new(Some(parent), state, root, qmdb_changes, ids));
     }
 
+    pub(crate) async fn cache_snapshot(&self, digest: ConsensusDigest, snapshot: LedgerSnapshot) {
+        let inner = self.inner.lock().await;
+        inner.snapshots.insert(digest, snapshot);
+    }
+
+    pub(crate) async fn proposal_components(
+        &self,
+    ) -> (OverlayState<QmdbState>, InMemoryMempool, InMemorySnapshotStore<OverlayState<QmdbState>>)
+    {
+        let inner = self.inner.lock().await;
+        let root_state = OverlayState::new(inner.qmdb.state(), QmdbChangeSet::default());
+        (root_state, inner.mempool.clone(), inner.snapshots.clone())
+    }
+
     /// Compute a preview root as if all unpersisted ancestors plus `changes` were applied.
     ///
     /// Note: QMDB roots include commit metadata, so persisted roots can differ from this preview.
@@ -170,15 +183,21 @@ impl LedgerView {
         parent: ConsensusDigest,
         changes: QmdbChangeSet,
     ) -> anyhow::Result<StateRoot> {
-        // Get the handle and release the lock before awaiting
-        let (changes, qmdb) = {
+        self.compute_root_from_store(parent, changes).await
+    }
+
+    pub(crate) async fn compute_root_from_store(
+        &self,
+        parent: ConsensusDigest,
+        changes: QmdbChangeSet,
+    ) -> anyhow::Result<StateRoot> {
+        let (changes, state) = {
             let inner = self.inner.lock().await;
-            let snapshot =
-                inner.snapshots.get(&parent).ok_or_else(|| anyhow::anyhow!("missing snapshot"))?;
-            let changes = snapshot.state.merge_changes(changes);
-            (changes, inner.qmdb.clone())
+            let changes = inner.snapshots.merged_changes(parent, changes)?;
+            (changes, inner.qmdb.state())
         };
-        qmdb.compute_root(changes).await.map_err(Into::into)
+        let root = state.compute_root(&changes).await?;
+        Ok(StateRoot(root))
     }
 
     /// Persist `digest` and any missing ancestors to QMDB.
@@ -215,11 +234,6 @@ impl LedgerView {
         let inner = self.inner.lock().await;
         let tx_ids: Vec<TxId> = txs.iter().map(Tx::id).collect();
         inner.mempool.prune(&tx_ids);
-    }
-
-    pub(crate) async fn build_txs(&self, max_txs: usize, excluded: &BTreeSet<TxId>) -> Vec<Tx> {
-        let inner = self.inner.lock().await;
-        inner.mempool.build(max_txs, excluded)
     }
 }
 
@@ -298,6 +312,17 @@ impl LedgerService {
         self.view.insert_snapshot(digest, parent, state, root, changes, txs).await;
     }
 
+    pub(crate) async fn cache_snapshot(&self, digest: ConsensusDigest, snapshot: LedgerSnapshot) {
+        self.view.cache_snapshot(digest, snapshot).await;
+    }
+
+    pub(crate) async fn proposal_components(
+        &self,
+    ) -> (OverlayState<QmdbState>, InMemoryMempool, InMemorySnapshotStore<OverlayState<QmdbState>>)
+    {
+        self.view.proposal_components().await
+    }
+
     #[cfg(test)]
     pub(crate) async fn compute_root(
         &self,
@@ -305,6 +330,14 @@ impl LedgerService {
         changes: QmdbChangeSet,
     ) -> anyhow::Result<StateRoot> {
         self.view.compute_qmdb_root(parent, changes).await
+    }
+
+    pub(crate) async fn compute_root_from_store(
+        &self,
+        parent: ConsensusDigest,
+        changes: QmdbChangeSet,
+    ) -> anyhow::Result<StateRoot> {
+        self.view.compute_root_from_store(parent, changes).await
     }
 
     pub(crate) async fn persist_snapshot(&self, digest: ConsensusDigest) -> anyhow::Result<()> {
@@ -318,10 +351,6 @@ impl LedgerService {
     pub(crate) async fn prune_mempool(&self, txs: &[Tx]) {
         self.view.prune_mempool(txs).await;
     }
-
-    pub(crate) async fn build_txs(&self, max_txs: usize, excluded: &BTreeSet<TxId>) -> Vec<Tx> {
-        self.view.build_txs(max_txs, excluded).await
-    }
 }
 
 #[cfg(test)]
@@ -329,7 +358,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use alloy_consensus::Header;
-    use alloy_evm::revm::Database as _;
+    use alloy_evm::revm::{Database as _, database::CacheDB};
     use alloy_primitives::{Address, B256, Bytes, U256};
     use commonware_cryptography::Committable as _;
     use commonware_runtime::{Runner, buffer::PoolRef, tokio};
@@ -338,12 +367,12 @@ mod tests {
     use kora_consensus::SnapshotStore as _;
     use kora_domain::{Block, ConsensusDigest, Tx};
     use kora_executor::{BlockContext, BlockExecutor, RevmExecutor};
+    use kora_qmdb_ledger::QmdbRefDb;
 
     use super::{LedgerService, LedgerSnapshot, LedgerView, OverlayState};
-    use crate::{
-        qmdb::RevmDb,
-        tx::{CHAIN_ID, address_from_key, sign_eip1559_transfer},
-    };
+    use crate::tx::{CHAIN_ID, address_from_key, sign_eip1559_transfer};
+
+    type RevmDb = CacheDB<QmdbRefDb>;
 
     static PARTITION_COUNTER: AtomicUsize = AtomicUsize::new(0);
 

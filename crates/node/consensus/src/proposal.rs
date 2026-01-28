@@ -123,6 +123,48 @@ where
         Ok((block, snapshot))
     }
 
+    /// Async variant of [`Self::build_proposal`] that awaits state root computation.
+    pub async fn build_proposal_async(
+        &self,
+        parent: &Block,
+        prevrandao: B256,
+    ) -> Result<(Block, Snapshot<S>), ConsensusError> {
+        let parent_digest = parent.commitment();
+        let parent_snapshot = self
+            .snapshots
+            .get(&parent_digest)
+            .ok_or(ConsensusError::SnapshotNotFound(parent_digest))?;
+
+        let excluded = self.collect_pending_tx_ids(parent_digest)?;
+        let txs = self.mempool.build(self.max_txs, &excluded);
+
+        let height = parent.height + 1;
+        let context = block_context(height, prevrandao);
+        let txs_bytes: Vec<Bytes> = txs.iter().map(|tx| tx.bytes.clone()).collect();
+        let outcome = self
+            .executor
+            .execute(&parent_snapshot.state, &context, &txs_bytes)
+            .map_err(|e| ConsensusError::Execution(e.to_string()))?;
+
+        let merged_changes =
+            self.snapshots.merged_changes(parent_digest, outcome.changes.clone())?;
+        let state_root =
+            self.state.compute_root(&merged_changes).await.map_err(ConsensusError::StateDb)?;
+        let state_root = StateRoot(state_root);
+
+        let block = Block { parent: parent.id(), height, prevrandao, state_root, txs };
+        let tx_ids = self.tx_ids_from_block(&block);
+        let snapshot = Snapshot::new(
+            Some(parent_digest),
+            parent_snapshot.state,
+            state_root,
+            outcome.changes,
+            tx_ids,
+        );
+
+        Ok((block, snapshot))
+    }
+
     fn tx_ids_from_block(&self, block: &Block) -> BTreeSet<TxId> {
         block.txs.iter().map(Tx::id).collect()
     }

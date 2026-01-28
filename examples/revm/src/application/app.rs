@@ -19,7 +19,7 @@ use commonware_consensus::{
 use commonware_cryptography::{Committable as _, certificate::Scheme as CertScheme};
 use commonware_runtime::{Clock, Metrics, Spawner};
 use futures::StreamExt as _;
-use kora_consensus::execute_block;
+use kora_consensus::{Mempool, ProposalBuilder, execute_block};
 use kora_domain::{Block, ConsensusDigest, PublicKey, TxId};
 use kora_executor::{BlockContext, RevmExecutor};
 use kora_overlay::OverlayState;
@@ -41,6 +41,32 @@ fn block_context(height: u64, prevrandao: B256) -> BlockContext {
     BlockContext::new(header, prevrandao)
 }
 
+#[derive(Clone)]
+struct FilteredMempool<M> {
+    inner: M,
+    excluded: BTreeSet<TxId>,
+}
+
+impl<M: Mempool> Mempool for FilteredMempool<M> {
+    fn insert(&self, tx: kora_domain::Tx) -> bool {
+        self.inner.insert(tx)
+    }
+
+    fn build(&self, max_txs: usize, excluded: &BTreeSet<TxId>) -> Vec<kora_domain::Tx> {
+        let mut merged = excluded.clone();
+        merged.extend(self.excluded.iter().copied());
+        self.inner.build(max_txs, &merged)
+    }
+
+    fn prune(&self, tx_ids: &[TxId]) {
+        self.inner.prune(tx_ids);
+    }
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
 /// Helper function for propose that owns all its inputs.
 async fn propose_inner<S>(
     // Ledger service commands for proposal preparation.
@@ -53,46 +79,41 @@ where
 {
     let parent = ancestry.next().await?;
 
-    // Transactions remain in the mempool until the block that includes them finalizes. Walk
-    // back over pending ancestors so we do not propose a block that re-includes in-flight txs.
-    let mut included = BTreeSet::<TxId>::new();
+    // Drain the ancestry stream so marshal can backfill missing blocks and
+    // exclude pending ancestor txs from new proposals.
+    let mut excluded = BTreeSet::<TxId>::new();
     for tx in parent.txs.iter() {
-        included.insert(tx.id());
+        excluded.insert(tx.id());
     }
     while let Some(block) = ancestry.next().await {
         for tx in block.txs.iter() {
-            included.insert(tx.id());
+            excluded.insert(tx.id());
         }
     }
 
     let parent_digest = parent.commitment();
-    let parent_snapshot = state.parent_snapshot(parent_digest).await?;
     let seed_hash = state.seed_for_parent(parent_digest).await;
     let prevrandao = seed_hash.unwrap_or_else(|| B256::from(parent_digest.0));
-    let height = parent.height + 1;
 
-    let txs = state.build_txs(max_txs, &included).await;
-
+    let (root_state, mempool, snapshots) = state.proposal_components().await;
     let executor = RevmExecutor::new(CHAIN_ID);
-    let context = block_context(height, prevrandao);
-    let execution = execute_block(&parent_snapshot, &executor, &context, &txs).await.ok()?;
-    let merged_changes = parent_snapshot.state.merge_changes(execution.outcome.changes.clone());
-
-    let child =
-        Block { parent: parent.id(), height, prevrandao, state_root: execution.state_root, txs };
-
-    let digest = child.commitment();
+    let mempool = FilteredMempool { inner: mempool, excluded };
+    let builder =
+        ProposalBuilder::new(root_state, mempool, snapshots, executor).with_max_txs(max_txs);
+    let (child, proposal_snapshot) =
+        builder.build_proposal_async(&parent, prevrandao).await.ok()?;
+    let parent_snapshot = state.parent_snapshot(parent_digest).await?;
+    let merged_changes = parent_snapshot.state.merge_changes(proposal_snapshot.changes.clone());
     let next_state = OverlayState::new(parent_snapshot.state.base(), merged_changes);
-    state
-        .insert_snapshot(
-            digest,
-            parent_digest,
-            next_state,
-            child.state_root,
-            execution.outcome.changes,
-            &child.txs,
-        )
-        .await;
+    let digest = child.commitment();
+    let snapshot = kora_consensus::Snapshot::new(
+        Some(parent_digest),
+        next_state,
+        proposal_snapshot.state_root,
+        proposal_snapshot.changes,
+        proposal_snapshot.tx_ids,
+    );
+    state.cache_snapshot(digest, snapshot).await;
     Some(child)
 }
 
@@ -122,7 +143,13 @@ where
         Err(_) => return false,
     };
     let merged_changes = parent_snapshot.state.merge_changes(execution.outcome.changes.clone());
-    if execution.state_root != block.state_root {
+    let state_root =
+        match state.compute_root_from_store(parent_digest, execution.outcome.changes.clone()).await
+        {
+            Ok(root) => root,
+            Err(_) => return false,
+        };
+    if state_root != block.state_root {
         return false;
     }
 
@@ -133,7 +160,7 @@ where
             digest,
             parent_digest,
             next_state,
-            execution.state_root,
+            state_root,
             execution.outcome.changes,
             &block.txs,
         )

@@ -57,6 +57,7 @@ kora-transport = { path = "crates/network/transport" }
 kora-handlers = { path = "crates/storage/handlers" }
 kora-overlay = { path = "crates/storage/overlay" }
 kora-qmdb = { path = "crates/storage/qmdb" }
+kora-qmdb-ledger = { path = "crates/storage/qmdb-ledger" }
 kora-traits = { path = "crates/storage/traits" }
 
 commonware-p2p = "0.0.65"

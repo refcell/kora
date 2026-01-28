@@ -52,6 +52,8 @@ kora-backend = { path = "crates/storage/backend" }
 kora-config = { path = "crates/node/config" }
 kora-consensus = { path = "crates/node/consensus" }
 kora-executor = { path = "crates/node/executor" }
+kora-ledger = { path = "crates/node/ledger" }
+kora-reporters = { path = "crates/node/reporters" }
 kora-service = { path = "crates/node/service" }
 kora-transport = { path = "crates/network/transport" }
 kora-handlers = { path = "crates/storage/handlers" }

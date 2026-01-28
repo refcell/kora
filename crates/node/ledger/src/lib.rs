@@ -1,48 +1,68 @@
-//! Node-local state for the REVM chain example.
-//!
-//! Threshold-simplex orders only block digests. Full blocks are verified by the application and
-//! disseminated/backfilled by `commonware_consensus::marshal`. This module holds the minimal
-//! shared state needed by the example:
-//! - a mempool of submitted transactions,
-//! - per-block execution snapshots (QMDB base state + merged change set overlay) keyed by the
-//!   consensus digest, and
-//! - a per-digest seed hash used to populate the next block's `prevrandao`.
-//!
-//! The simulation harness queries this state through `crate::application::NodeHandle`.
+//! Ledger services for Kora nodes.
+#![doc = include_str!("../README.md")]
+#![doc(issue_tracker_base_url = "https://github.com/refcell/kora/issues/")]
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{collections::BTreeSet, fmt, sync::Arc};
 
-use alloy_evm::revm::primitives::{Address, B256, U256};
+use alloy_primitives::{Address, B256, U256};
 use commonware_cryptography::Committable as _;
 use commonware_runtime::{Metrics as _, buffer::PoolRef, tokio};
 use futures::{channel::mpsc::UnboundedReceiver, lock::Mutex};
 use kora_consensus::{
-    Mempool as _, SeedTracker as _, Snapshot, SnapshotStore as _,
+    ConsensusError, Mempool as _, SeedTracker as _, Snapshot, SnapshotStore as _,
     components::{InMemoryMempool, InMemorySeedTracker, InMemorySnapshotStore},
 };
 use kora_domain::{
     Block, BlockId, ConsensusDigest, LedgerEvent, LedgerEvents, StateRoot, Tx, TxId,
 };
 use kora_overlay::OverlayState;
-use kora_qmdb_ledger::{QmdbChangeSet, QmdbConfig, QmdbLedger, QmdbState};
-use kora_traits::{StateDbRead, StateDbWrite};
+use kora_qmdb_ledger::{Error as QmdbError, QmdbChangeSet, QmdbConfig, QmdbLedger, QmdbState};
+use kora_traits::{StateDbError, StateDbRead, StateDbWrite};
+use thiserror::Error;
 
-type LedgerSnapshot = Snapshot<OverlayState<QmdbState>>;
+/// Snapshot type used by the ledger.
+pub type LedgerSnapshot = Snapshot<OverlayState<QmdbState>>;
 
 fn tx_ids(txs: &[Tx]) -> BTreeSet<TxId> {
     txs.iter().map(Tx::id).collect()
 }
-#[derive(Clone)]
+
+/// Errors surfaced by ledger services.
+#[derive(Debug, Error)]
+pub enum LedgerError {
+    /// QMDB-backed storage error.
+    #[error("qmdb error: {0}")]
+    Qmdb(#[from] QmdbError),
+    /// Snapshot store or consensus component error.
+    #[error("consensus error: {0}")]
+    Consensus(#[from] ConsensusError),
+    /// State database error.
+    #[error("state db error: {0}")]
+    StateDb(#[from] StateDbError),
+}
+
+/// Result alias for ledger operations.
+pub type LedgerResult<T> = Result<T, LedgerError>;
+
 /// Ledger view that owns the mutexed execution state.
-pub(crate) struct LedgerView {
+#[derive(Clone)]
+pub struct LedgerView {
     /// Mutex-protected running state.
     inner: Arc<Mutex<LedgerState>>,
     /// Genesis block stored so the automaton can replay from height 0.
     genesis_block: Block,
 }
 
+impl fmt::Debug for LedgerView {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LedgerView").finish_non_exhaustive()
+    }
+}
+
 /// Internal ledger state guarded by the mutex inside `LedgerView`.
-pub(crate) struct LedgerState {
+struct LedgerState {
     /// Pending transactions that are not yet included in finalized blocks.
     mempool: InMemoryMempool,
     /// Execution snapshots indexed by digest so we can replay ancestors.
@@ -53,20 +73,25 @@ pub(crate) struct LedgerState {
     qmdb: QmdbLedger,
 }
 
-/// Minimal mempool helper that avoids duplicating logics across services.
 impl LedgerView {
-    pub(crate) async fn init(
+    /// Initialize a ledger view with a QMDB backend built from the provided settings.
+    pub async fn init(
         context: tokio::Context,
         buffer_pool: PoolRef,
         partition_prefix: String,
         genesis_alloc: Vec<(Address, U256)>,
-    ) -> anyhow::Result<Self> {
-        let qmdb = QmdbLedger::init(
-            context.with_label("qmdb"),
-            QmdbConfig::new(partition_prefix, buffer_pool),
-            genesis_alloc,
-        )
-        .await?;
+    ) -> LedgerResult<Self> {
+        let config = QmdbConfig::new(partition_prefix, buffer_pool);
+        Self::init_with_config(context, config, genesis_alloc).await
+    }
+
+    /// Initialize a ledger view with an explicit QMDB configuration.
+    pub async fn init_with_config(
+        context: tokio::Context,
+        config: QmdbConfig,
+        genesis_alloc: Vec<(Address, U256)>,
+    ) -> LedgerResult<Self> {
+        let qmdb = QmdbLedger::init(context.with_label("qmdb"), config, genesis_alloc).await?;
         let genesis_root = qmdb.root().await?;
 
         let genesis_block = Block {
@@ -100,20 +125,19 @@ impl LedgerView {
         })
     }
 
-    pub(crate) fn genesis_block(&self) -> Block {
+    /// Return the genesis block of this ledger.
+    pub fn genesis_block(&self) -> Block {
         self.genesis_block.clone()
     }
 
-    pub(crate) async fn submit_tx(&self, tx: Tx) -> bool {
+    /// Submit a transaction into the mempool.
+    pub async fn submit_tx(&self, tx: Tx) -> bool {
         let inner = self.inner.lock().await;
         inner.mempool.insert(tx)
     }
 
-    pub(crate) async fn query_balance(
-        &self,
-        digest: ConsensusDigest,
-        address: Address,
-    ) -> Option<U256> {
+    /// Query a balance at the given digest.
+    pub async fn query_balance(&self, digest: ConsensusDigest, address: Address) -> Option<U256> {
         let snapshot = {
             let inner = self.inner.lock().await;
             inner.snapshots.get(&digest)
@@ -121,32 +145,38 @@ impl LedgerView {
         snapshot.state.balance(&address).await.ok()
     }
 
-    pub(crate) async fn query_state_root(&self, digest: ConsensusDigest) -> Option<StateRoot> {
+    /// Query a state root at the given digest.
+    pub async fn query_state_root(&self, digest: ConsensusDigest) -> Option<StateRoot> {
         let inner = self.inner.lock().await;
         inner.snapshots.get(&digest).map(|snapshot| snapshot.state_root)
     }
 
-    pub(crate) async fn query_seed(&self, digest: ConsensusDigest) -> Option<B256> {
+    /// Query the cached seed at the given digest.
+    pub async fn query_seed(&self, digest: ConsensusDigest) -> Option<B256> {
         let inner = self.inner.lock().await;
         inner.seeds.get(&digest)
     }
 
-    pub(crate) async fn seed_for_parent(&self, parent: ConsensusDigest) -> Option<B256> {
+    /// Return the seed associated with a parent digest.
+    pub async fn seed_for_parent(&self, parent: ConsensusDigest) -> Option<B256> {
         let inner = self.inner.lock().await;
         inner.seeds.get(&parent)
     }
 
-    pub(crate) async fn set_seed(&self, digest: ConsensusDigest, seed_hash: B256) {
+    /// Store the seed hash for a digest.
+    pub async fn set_seed(&self, digest: ConsensusDigest, seed_hash: B256) {
         let inner = self.inner.lock().await;
         inner.seeds.insert(digest, seed_hash);
     }
 
-    pub(crate) async fn parent_snapshot(&self, parent: ConsensusDigest) -> Option<LedgerSnapshot> {
+    /// Fetch the parent snapshot for a given digest.
+    pub async fn parent_snapshot(&self, parent: ConsensusDigest) -> Option<LedgerSnapshot> {
         let inner = self.inner.lock().await;
         inner.snapshots.get(&parent)
     }
 
-    pub(crate) async fn insert_snapshot(
+    /// Insert a snapshot for a block digest.
+    pub async fn insert_snapshot(
         &self,
         digest: ConsensusDigest,
         parent: ConsensusDigest,
@@ -160,12 +190,14 @@ impl LedgerView {
         inner.snapshots.insert(digest, Snapshot::new(Some(parent), state, root, qmdb_changes, ids));
     }
 
-    pub(crate) async fn cache_snapshot(&self, digest: ConsensusDigest, snapshot: LedgerSnapshot) {
+    /// Cache a snapshot that has already been constructed.
+    pub async fn cache_snapshot(&self, digest: ConsensusDigest, snapshot: LedgerSnapshot) {
         let inner = self.inner.lock().await;
         inner.snapshots.insert(digest, snapshot);
     }
 
-    pub(crate) async fn proposal_components(
+    /// Fetch the components needed to build a proposal.
+    pub async fn proposal_components(
         &self,
     ) -> (OverlayState<QmdbState>, InMemoryMempool, InMemorySnapshotStore<OverlayState<QmdbState>>)
     {
@@ -178,19 +210,20 @@ impl LedgerView {
     ///
     /// Note: QMDB roots include commit metadata, so persisted roots can differ from this preview.
     #[cfg(test)]
-    pub(crate) async fn compute_qmdb_root(
+    pub async fn compute_root(
         &self,
         parent: ConsensusDigest,
         changes: QmdbChangeSet,
-    ) -> anyhow::Result<StateRoot> {
+    ) -> LedgerResult<StateRoot> {
         self.compute_root_from_store(parent, changes).await
     }
 
-    pub(crate) async fn compute_root_from_store(
+    /// Compute a root using the persisted QMDB store plus any pending changes.
+    pub async fn compute_root_from_store(
         &self,
         parent: ConsensusDigest,
         changes: QmdbChangeSet,
-    ) -> anyhow::Result<StateRoot> {
+    ) -> LedgerResult<StateRoot> {
         let (changes, state) = {
             let inner = self.inner.lock().await;
             let changes = inner.snapshots.merged_changes(parent, changes)?;
@@ -204,7 +237,7 @@ impl LedgerView {
     ///
     /// Returns `Ok(true)` if a new commit happened, or `Ok(false)` if the digest is already
     /// persisted or currently being persisted by another task.
-    pub(crate) async fn persist_snapshot(&self, digest: ConsensusDigest) -> anyhow::Result<bool> {
+    pub async fn persist_snapshot(&self, digest: ConsensusDigest) -> LedgerResult<bool> {
         let (changes, qmdb, chain) = {
             let inner = self.inner.lock().await;
             let (chain, changes) = inner.snapshots.changes_for_persist(digest)?;
@@ -230,22 +263,30 @@ impl LedgerView {
         }
     }
 
-    pub(crate) async fn prune_mempool(&self, txs: &[Tx]) {
+    /// Remove transactions that are included in a block from the mempool.
+    pub async fn prune_mempool(&self, txs: &[Tx]) {
         let inner = self.inner.lock().await;
         let tx_ids: Vec<TxId> = txs.iter().map(Tx::id).collect();
         inner.mempool.prune(&tx_ids);
     }
 }
 
-#[derive(Clone)]
 /// Domain service that exposes high-level ledger commands.
-pub(crate) struct LedgerService {
+#[derive(Clone)]
+pub struct LedgerService {
     view: LedgerView,
     events: LedgerEvents,
 }
 
+impl fmt::Debug for LedgerService {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LedgerService").finish_non_exhaustive()
+    }
+}
+
 impl LedgerService {
-    pub(crate) fn new(view: LedgerView) -> Self {
+    /// Create a new ledger service from a ledger view.
+    pub fn new(view: LedgerView) -> Self {
         Self { view, events: LedgerEvents::new() }
     }
 
@@ -253,16 +294,18 @@ impl LedgerService {
         self.events.publish(event);
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn subscribe(&self) -> UnboundedReceiver<LedgerEvent> {
+    /// Subscribe to ledger events.
+    pub fn subscribe(&self) -> UnboundedReceiver<LedgerEvent> {
         self.events.subscribe()
     }
 
-    pub(crate) fn genesis_block(&self) -> Block {
+    /// Return the genesis block.
+    pub fn genesis_block(&self) -> Block {
         self.view.genesis_block()
     }
 
-    pub(crate) async fn submit_tx(&self, tx: Tx) -> bool {
+    /// Submit a transaction and emit events.
+    pub async fn submit_tx(&self, tx: Tx) -> bool {
         let tx_id = tx.id();
         let inserted = self.view.submit_tx(tx).await;
         if inserted {
@@ -271,36 +314,39 @@ impl LedgerService {
         inserted
     }
 
-    pub(crate) async fn query_balance(
-        &self,
-        digest: ConsensusDigest,
-        address: Address,
-    ) -> Option<U256> {
+    /// Query a balance at the given digest.
+    pub async fn query_balance(&self, digest: ConsensusDigest, address: Address) -> Option<U256> {
         self.view.query_balance(digest, address).await
     }
 
-    pub(crate) async fn query_state_root(&self, digest: ConsensusDigest) -> Option<StateRoot> {
+    /// Query the stored state root at the given digest.
+    pub async fn query_state_root(&self, digest: ConsensusDigest) -> Option<StateRoot> {
         self.view.query_state_root(digest).await
     }
 
-    pub(crate) async fn query_seed(&self, digest: ConsensusDigest) -> Option<B256> {
+    /// Query the cached seed at the given digest.
+    pub async fn query_seed(&self, digest: ConsensusDigest) -> Option<B256> {
         self.view.query_seed(digest).await
     }
 
-    pub(crate) async fn seed_for_parent(&self, parent: ConsensusDigest) -> Option<B256> {
+    /// Query the seed for a parent digest.
+    pub async fn seed_for_parent(&self, parent: ConsensusDigest) -> Option<B256> {
         self.view.seed_for_parent(parent).await
     }
 
-    pub(crate) async fn set_seed(&self, digest: ConsensusDigest, seed_hash: B256) {
+    /// Store the seed for a digest and publish an event.
+    pub async fn set_seed(&self, digest: ConsensusDigest, seed_hash: B256) {
         self.view.set_seed(digest, seed_hash).await;
         self.publish(LedgerEvent::SeedUpdated(digest, seed_hash));
     }
 
-    pub(crate) async fn parent_snapshot(&self, parent: ConsensusDigest) -> Option<LedgerSnapshot> {
+    /// Fetch the snapshot of a parent digest.
+    pub async fn parent_snapshot(&self, parent: ConsensusDigest) -> Option<LedgerSnapshot> {
         self.view.parent_snapshot(parent).await
     }
 
-    pub(crate) async fn insert_snapshot(
+    /// Insert a new snapshot.
+    pub async fn insert_snapshot(
         &self,
         digest: ConsensusDigest,
         parent: ConsensusDigest,
@@ -312,35 +358,40 @@ impl LedgerService {
         self.view.insert_snapshot(digest, parent, state, root, changes, txs).await;
     }
 
-    pub(crate) async fn cache_snapshot(&self, digest: ConsensusDigest, snapshot: LedgerSnapshot) {
+    /// Cache a fully constructed snapshot.
+    pub async fn cache_snapshot(&self, digest: ConsensusDigest, snapshot: LedgerSnapshot) {
         self.view.cache_snapshot(digest, snapshot).await;
     }
 
-    pub(crate) async fn proposal_components(
+    /// Fetch proposal components.
+    pub async fn proposal_components(
         &self,
     ) -> (OverlayState<QmdbState>, InMemoryMempool, InMemorySnapshotStore<OverlayState<QmdbState>>)
     {
         self.view.proposal_components().await
     }
 
+    /// Compute a preview root (test-only helper).
     #[cfg(test)]
-    pub(crate) async fn compute_root(
+    pub async fn compute_root(
         &self,
         parent: ConsensusDigest,
         changes: QmdbChangeSet,
-    ) -> anyhow::Result<StateRoot> {
-        self.view.compute_qmdb_root(parent, changes).await
+    ) -> LedgerResult<StateRoot> {
+        self.view.compute_root(parent, changes).await
     }
 
-    pub(crate) async fn compute_root_from_store(
+    /// Compute a root using the persisted store.
+    pub async fn compute_root_from_store(
         &self,
         parent: ConsensusDigest,
         changes: QmdbChangeSet,
-    ) -> anyhow::Result<StateRoot> {
+    ) -> LedgerResult<StateRoot> {
         self.view.compute_root_from_store(parent, changes).await
     }
 
-    pub(crate) async fn persist_snapshot(&self, digest: ConsensusDigest) -> anyhow::Result<()> {
+    /// Persist a snapshot and publish an event if a new commit occurs.
+    pub async fn persist_snapshot(&self, digest: ConsensusDigest) -> LedgerResult<()> {
         let persisted = self.view.persist_snapshot(digest).await?;
         if persisted {
             self.publish(LedgerEvent::SnapshotPersisted(digest));
@@ -348,7 +399,8 @@ impl LedgerService {
         Ok(())
     }
 
-    pub(crate) async fn prune_mempool(&self, txs: &[Tx]) {
+    /// Remove transactions from the mempool.
+    pub async fn prune_mempool(&self, txs: &[Tx]) {
         self.view.prune_mempool(txs).await;
     }
 }
@@ -358,21 +410,17 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use alloy_consensus::Header;
-    use alloy_evm::revm::{Database as _, database::CacheDB};
     use alloy_primitives::{Address, B256, Bytes, U256};
     use commonware_cryptography::Committable as _;
     use commonware_runtime::{Runner, buffer::PoolRef, tokio};
     use commonware_utils::{NZU16, NZUsize};
     use k256::ecdsa::SigningKey;
-    use kora_consensus::SnapshotStore as _;
     use kora_domain::{Block, ConsensusDigest, Tx, evm::Evm};
     use kora_executor::{BlockContext, BlockExecutor, RevmExecutor};
-    use kora_qmdb_ledger::QmdbRefDb;
+    use kora_overlay::OverlayState;
+    use kora_traits::StateDbRead;
 
-    use super::{LedgerService, LedgerSnapshot, LedgerView, OverlayState};
-    use crate::chain::CHAIN_ID;
-
-    type RevmDb = CacheDB<QmdbRefDb>;
+    use super::{LedgerService, LedgerSnapshot, LedgerView};
 
     static PARTITION_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -391,6 +439,7 @@ mod tests {
     const TO_BYTE_A: u8 = 0x22;
     const FROM_BYTE_B: u8 = 0x33;
     const TO_BYTE_B: u8 = 0x44;
+    const CHAIN_ID: u64 = 1337;
 
     struct LedgerSetup {
         ledger: LedgerView,
@@ -519,7 +568,7 @@ mod tests {
             )
             .await;
             let parent_snapshot =
-                setup.service.parent_snapshot(block1.digest).await.expect("parent snapshot");
+                setup.service.parent_snapshot(block1.digest).await.expect("block1 snapshot");
             let block2 = build_block_snapshot(
                 &setup.service,
                 &block1.block,
@@ -534,25 +583,13 @@ mod tests {
                 setup.ledger.persist_snapshot(block2.digest).await.expect("persist snapshot");
 
             // Assert
-            assert!(persisted, "expected merged persistence");
-
-            let qmdb = {
-                let inner = setup.ledger.inner.lock().await;
-                inner.qmdb.clone()
-            };
-            qmdb.root().await.expect("qmdb root");
-
-            let mut persisted_db = RevmDb::new(qmdb.database().expect("qmdb db"));
-            let from_info = persisted_db.basic(from).expect("sender account");
-            let to_info = persisted_db.basic(to).expect("recipient account");
-            let expected_from = GENESIS_BALANCE - TRANSFER_ONE - TRANSFER_TWO;
-            let expected_to = TRANSFER_ONE + TRANSFER_TWO;
-            assert_eq!(from_info.expect("sender exists").balance, U256::from(expected_from));
-            assert_eq!(to_info.expect("recipient exists").balance, U256::from(expected_to));
-
-            let inner = setup.ledger.inner.lock().await;
-            assert!(inner.snapshots.is_persisted(&block1.digest));
-            assert!(inner.snapshots.is_persisted(&block2.digest));
+            assert!(persisted);
+            let state_root =
+                setup.ledger.query_state_root(block2.digest).await.expect("state root");
+            let qmdb = setup.ledger.inner.lock().await.qmdb.clone();
+            let result = qmdb.state().balance(&to).await.expect("balance");
+            assert_eq!(result, U256::from(TRANSFER_ONE + TRANSFER_TWO));
+            assert_eq!(state_root, block2.block.state_root);
         });
     }
 
@@ -562,14 +599,14 @@ mod tests {
         let executor = tokio::Runner::default();
         executor.start(|context| async move {
             // Arrange
-            let from_key = key_from_byte(FROM_BYTE_B);
-            let to_key = key_from_byte(TO_BYTE_B);
+            let from_key = key_from_byte(FROM_BYTE_A);
+            let to_key = key_from_byte(TO_BYTE_A);
             let from = Evm::address_from_key(&from_key);
             let to = Evm::address_from_key(&to_key);
             let setup = setup_ledger(
                 context,
-                "revm-ledger-dup",
-                vec![(from, U256::from(DUPLICATE_BALANCE)), (to, U256::ZERO)],
+                "revm-ledger-duplicate",
+                vec![(from, U256::from(GENESIS_BALANCE)), (to, U256::ZERO)],
             )
             .await;
             let parent_snapshot = setup
@@ -582,7 +619,7 @@ mod tests {
                 &setup.genesis,
                 parent_snapshot,
                 HEIGHT_ONE,
-                vec![transfer_tx(&from_key, to, TRANSFER_DUPLICATE, 0)],
+                vec![transfer_tx(&from_key, to, TRANSFER_ONE, 0)],
             )
             .await;
 
@@ -595,7 +632,174 @@ mod tests {
                 setup.ledger.persist_snapshot(block.digest).await.expect("persist snapshot");
 
             // Assert
-            assert!(!second, "duplicate persist should be a no-op");
+            assert!(!second);
+        });
+    }
+
+    #[test]
+    fn persist_snapshot_merges_overlays() {
+        // Tokio runtime required for WrapDatabaseAsync in the QMDB adapter.
+        let executor = tokio::Runner::default();
+        executor.start(|context| async move {
+            // Arrange
+            let sender_bytes = [0x11, 0x12, 0x13, 0x14, 0x15];
+            let recipient_bytes = [0x21, 0x22, 0x23, 0x24, 0x25];
+            let mut sender_keys = Vec::new();
+            let mut recipients = Vec::new();
+            let mut genesis_alloc = Vec::new();
+            for (sender_byte, recipient_byte) in sender_bytes.iter().zip(recipient_bytes.iter()) {
+                let recipient_key = key_from_byte(*recipient_byte);
+                let recipient = Evm::address_from_key(&recipient_key);
+                recipients.push(recipient);
+                genesis_alloc.push((recipient, U256::ZERO));
+                let key = key_from_byte(*sender_byte);
+                let addr = Evm::address_from_key(&key);
+                sender_keys.push(key);
+                genesis_alloc.push((addr, U256::from(GENESIS_BALANCE)));
+            }
+            let setup = setup_ledger(context, "revm-ledger-overlay", genesis_alloc).await;
+            let parent_snapshot = setup
+                .service
+                .parent_snapshot(setup.genesis_digest)
+                .await
+                .expect("genesis snapshot");
+            let txs: Vec<Tx> = sender_keys
+                .iter()
+                .zip(recipients.iter().copied())
+                .map(|(key, recipient)| transfer_tx(key, recipient, TRANSFER_DUPLICATE, 0))
+                .collect();
+            let block = build_block_snapshot(
+                &setup.service,
+                &setup.genesis,
+                parent_snapshot,
+                HEIGHT_ONE,
+                txs,
+            )
+            .await;
+
+            // Act
+            let persisted = setup.ledger.persist_snapshot(block.digest).await.expect("persist");
+            assert!(persisted);
+
+            // Assert
+            let qmdb = setup.ledger.inner.lock().await.qmdb.clone();
+            for recipient in recipients {
+                let result = qmdb.state().balance(&recipient).await.expect("balance");
+                assert_eq!(result, U256::from(TRANSFER_DUPLICATE));
+            }
+        });
+    }
+
+    #[test]
+    fn persist_snapshot_unrelated_merges() {
+        // Tokio runtime required for WrapDatabaseAsync in the QMDB adapter.
+        let executor = tokio::Runner::default();
+        executor.start(|context| async move {
+            // Arrange
+            let from_key_a = key_from_byte(FROM_BYTE_A);
+            let to_key_a = key_from_byte(TO_BYTE_A);
+            let from_a = Evm::address_from_key(&from_key_a);
+            let to_a = Evm::address_from_key(&to_key_a);
+            let from_key_b = key_from_byte(FROM_BYTE_B);
+            let to_key_b = key_from_byte(TO_BYTE_B);
+            let from_b = Evm::address_from_key(&from_key_b);
+            let to_b = Evm::address_from_key(&to_key_b);
+            let setup = setup_ledger(
+                context,
+                "revm-ledger-unrelated",
+                vec![
+                    (from_a, U256::from(GENESIS_BALANCE)),
+                    (to_a, U256::ZERO),
+                    (from_b, U256::from(DUPLICATE_BALANCE)),
+                    (to_b, U256::ZERO),
+                ],
+            )
+            .await;
+            let parent_snapshot = setup
+                .service
+                .parent_snapshot(setup.genesis_digest)
+                .await
+                .expect("genesis snapshot");
+            let block1 = build_block_snapshot(
+                &setup.service,
+                &setup.genesis,
+                parent_snapshot,
+                HEIGHT_ONE,
+                vec![transfer_tx(&from_key_a, to_a, TRANSFER_ONE, 0)],
+            )
+            .await;
+            let parent_snapshot = setup
+                .service
+                .parent_snapshot(setup.genesis_digest)
+                .await
+                .expect("genesis snapshot");
+            let block2 = build_block_snapshot(
+                &setup.service,
+                &setup.genesis,
+                parent_snapshot,
+                HEIGHT_ONE,
+                vec![transfer_tx(&from_key_b, to_b, TRANSFER_DUPLICATE, 0)],
+            )
+            .await;
+
+            // Act
+            let persisted_1 =
+                setup.ledger.persist_snapshot(block1.digest).await.expect("persist snapshot");
+            let persisted_2 =
+                setup.ledger.persist_snapshot(block2.digest).await.expect("persist snapshot");
+
+            // Assert
+            assert!(persisted_1);
+            assert!(persisted_2);
+            let qmdb = setup.ledger.inner.lock().await.qmdb.clone();
+            assert_eq!(
+                qmdb.state().balance(&to_a).await.expect("balance"),
+                U256::from(TRANSFER_ONE)
+            );
+            assert_eq!(
+                qmdb.state().balance(&to_b).await.expect("balance"),
+                U256::from(TRANSFER_DUPLICATE)
+            );
+        });
+    }
+
+    #[test]
+    fn persist_snapshot_updates_snapshot_state() {
+        // Tokio runtime required for WrapDatabaseAsync in the QMDB adapter.
+        let executor = tokio::Runner::default();
+        executor.start(|context| async move {
+            // Arrange
+            let from_key = key_from_byte(FROM_BYTE_A);
+            let to_key = key_from_byte(TO_BYTE_A);
+            let from = Evm::address_from_key(&from_key);
+            let to = Evm::address_from_key(&to_key);
+            let setup = setup_ledger(
+                context,
+                "revm-ledger-updates",
+                vec![(from, U256::from(GENESIS_BALANCE)), (to, U256::ZERO)],
+            )
+            .await;
+            let parent_snapshot = setup
+                .service
+                .parent_snapshot(setup.genesis_digest)
+                .await
+                .expect("genesis snapshot");
+            let block = build_block_snapshot(
+                &setup.service,
+                &setup.genesis,
+                parent_snapshot,
+                HEIGHT_ONE,
+                vec![transfer_tx(&from_key, to, TRANSFER_ONE, 0)],
+            )
+            .await;
+
+            // Act
+            let persisted = setup.ledger.persist_snapshot(block.digest).await.expect("persist");
+
+            // Assert
+            assert!(persisted);
+            let state_root = setup.ledger.query_state_root(block.digest).await.expect("state root");
+            assert_eq!(state_root, block.block.state_root);
         });
     }
 }

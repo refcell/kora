@@ -19,14 +19,13 @@ bench = false
 kora-domain = { workspace = true, features = ["evm"] }
 kora-consensus.workspace = true
 kora-executor.workspace = true
+kora-ledger.workspace = true
 kora-overlay.workspace = true
-kora-qmdb-ledger.workspace = true
-kora-traits.workspace = true
+kora-reporters.workspace = true
 
 # Commonware
 commonware-p2p.workspace = true
 commonware-utils.workspace = true
-commonware-codec.workspace = true
 commonware-runtime.workspace = true
 commonware-storage.workspace = true
 commonware-parallel.workspace = true

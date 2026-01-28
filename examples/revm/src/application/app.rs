@@ -22,12 +22,11 @@ use futures::StreamExt as _;
 use kora_consensus::{BlockExecution, Mempool, ProposalBuilder};
 use kora_domain::{Block, ConsensusDigest, PublicKey, TxId};
 use kora_executor::{BlockContext, RevmExecutor};
+use kora_ledger::{LedgerService, LedgerView};
 use kora_overlay::OverlayState;
 use rand::Rng;
 
-use super::ledger::{LedgerService, LedgerView};
-use crate::chain::CHAIN_ID;
-const BLOCK_GAS_LIMIT: u64 = 30_000_000;
+use crate::chain::{BLOCK_GAS_LIMIT, CHAIN_ID};
 
 fn block_context(height: u64, prevrandao: B256) -> BlockContext {
     let header = Header {

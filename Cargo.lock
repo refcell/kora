@@ -3208,6 +3208,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "kora-ledger"
+version = "0.1.0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-evm",
+ "alloy-primitives",
+ "commonware-cryptography",
+ "commonware-runtime",
+ "commonware-utils",
+ "futures",
+ "k256",
+ "kora-consensus",
+ "kora-domain",
+ "kora-executor",
+ "kora-overlay",
+ "kora-qmdb-ledger",
+ "kora-traits",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "kora-marshal"
 version = "0.1.0"
 dependencies = [
@@ -3265,6 +3286,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "kora-reporters"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "commonware-codec",
+ "commonware-consensus",
+ "commonware-cryptography",
+ "commonware-runtime",
+ "commonware-utils",
+ "kora-consensus",
+ "kora-domain",
+ "kora-executor",
+ "kora-ledger",
+ "kora-overlay",
+ "kora-qmdb-ledger",
+ "tracing",
+]
+
+[[package]]
 name = "kora-revm-example"
 version = "0.1.0"
 dependencies = [
@@ -3274,7 +3314,6 @@ dependencies = [
  "anyhow",
  "clap",
  "commonware-broadcast",
- "commonware-codec",
  "commonware-consensus",
  "commonware-cryptography",
  "commonware-p2p",
@@ -3288,9 +3327,9 @@ dependencies = [
  "kora-consensus",
  "kora-domain",
  "kora-executor",
+ "kora-ledger",
  "kora-overlay",
- "kora-qmdb-ledger",
- "kora-traits",
+ "kora-reporters",
  "libc",
  "prometheus-client",
  "rand 0.8.5",

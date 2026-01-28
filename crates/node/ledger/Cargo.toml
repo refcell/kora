@@ -1,0 +1,47 @@
+[package]
+name = "kora-ledger"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Ledger services for Kora nodes"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Local crates
+kora-consensus = { path = "../consensus" }
+kora-domain = { path = "../domain" }
+kora-overlay = { path = "../../storage/overlay" }
+kora-qmdb-ledger = { path = "../../storage/qmdb-ledger" }
+kora-traits = { path = "../../storage/traits" }
+
+# Commonware
+commonware-cryptography.workspace = true
+commonware-runtime.workspace = true
+
+# Alloy
+alloy-primitives.workspace = true
+
+# Async
+futures.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+[dev-dependencies]
+# Local crates
+kora-executor = { path = "../executor" }
+
+# Commonware
+commonware-runtime.workspace = true
+commonware-utils.workspace = true
+
+# Execution
+alloy-evm = { workspace = true, features = ["std"] }
+alloy-consensus.workspace = true
+
+# Crypto
+k256.workspace = true

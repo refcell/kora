@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use alloy_consensus::Header;
+use alloy_primitives::Address;
 use anyhow::Context as _;
 use commonware_consensus::{
     Reporters,
@@ -13,7 +15,10 @@ use commonware_parallel::Sequential;
 use commonware_runtime::{Metrics as _, Spawner as _};
 use commonware_utils::{NZU64, NZUsize};
 use futures::{StreamExt as _, channel::mpsc};
-use kora_domain::{BootstrapConfig, FinalizationEvent, LedgerEvent};
+use kora_domain::{Block, BootstrapConfig, FinalizationEvent, LedgerEvent};
+use kora_executor::{BlockContext, RevmExecutor};
+use kora_ledger::{LedgerService, LedgerView};
+use kora_reporters::{BlockContextProvider, FinalizedReporter, SeedReporter};
 
 use super::{
     TransportContext,
@@ -25,10 +30,35 @@ use super::{
     env::{NodeEnvironment, TransportControl},
     marshal::{MarshalStart, start_marshal},
 };
-use crate::application::{
-    FinalizedReporter, LedgerObservers, LedgerService, LedgerView, NodeHandle, RevmApplication,
-    SeedReporter,
+use crate::{
+    application::{LedgerObservers, NodeHandle, RevmApplication},
+    chain::{BLOCK_GAS_LIMIT, CHAIN_ID},
 };
+
+#[derive(Clone, Debug)]
+struct RevmContextProvider {
+    gas_limit: u64,
+}
+
+impl RevmContextProvider {
+    const fn new(gas_limit: u64) -> Self {
+        Self { gas_limit }
+    }
+}
+
+impl BlockContextProvider for RevmContextProvider {
+    fn context(&self, block: &Block) -> BlockContext {
+        let header = Header {
+            number: block.height,
+            timestamp: block.height,
+            gas_limit: self.gas_limit,
+            beneficiary: Address::ZERO,
+            base_fee_per_gas: Some(0),
+            ..Default::default()
+        };
+        BlockContext::new(header, block.prevrandao)
+    }
+}
 
 /// Initialize and run a single node (QMDB/state + marshal + simplex engine).
 pub(crate) async fn start_node<E>(
@@ -86,7 +116,10 @@ where
     let handle = NodeHandle::new(ledger.clone());
     let app = RevmApplication::<ThresholdScheme>::new(block_cfg.max_txs, state.clone());
 
-    let finalized_reporter = FinalizedReporter::new(ledger.clone(), context.clone());
+    let executor = RevmExecutor::new(CHAIN_ID);
+    let context_provider = RevmContextProvider::new(BLOCK_GAS_LIMIT);
+    let finalized_reporter =
+        FinalizedReporter::new(ledger.clone(), context.clone(), executor, context_provider);
 
     let marshal_mailbox = start_marshal(
         &context,

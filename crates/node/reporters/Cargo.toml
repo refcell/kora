@@ -1,0 +1,33 @@
+[package]
+name = "kora-reporters"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Consensus reporters for Kora nodes"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Local crates
+kora-consensus = { path = "../consensus" }
+kora-domain = { path = "../domain" }
+kora-executor = { path = "../executor" }
+kora-ledger = { path = "../ledger" }
+kora-overlay = { path = "../../storage/overlay" }
+kora-qmdb-ledger = { path = "../../storage/qmdb-ledger" }
+
+# Commonware
+commonware-codec.workspace = true
+commonware-consensus.workspace = true
+commonware-cryptography.workspace = true
+commonware-runtime.workspace = true
+commonware-utils.workspace = true
+
+# Alloy
+alloy-primitives.workspace = true
+
+# Tracing
+tracing.workspace = true

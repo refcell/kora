@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::Context as _;
 use commonware_broadcast::buffered;
 use commonware_consensus::{
-    marshal,
+    Reporter, marshal,
     types::{Epoch, FixedEpocher},
 };
 use commonware_p2p::simulated;
@@ -16,8 +16,6 @@ use kora_domain::{Block, BlockCfg};
 use super::config::{
     ChannelReceiver, ChannelSender, EPOCH_LENGTH, MAILBOX_SIZE, Peer, ThresholdScheme,
 };
-use crate::application::FinalizedReporter;
-
 #[derive(Clone)]
 struct ConstantSchemeProvider(Arc<ThresholdScheme>);
 
@@ -40,7 +38,7 @@ impl From<ThresholdScheme> for ConstantSchemeProvider {
     }
 }
 
-pub(super) struct MarshalStart<M> {
+pub(super) struct MarshalStart<M, R> {
     /// Node index used for naming partitions/metrics.
     pub(super) index: usize,
     /// Base prefix used for marshal partitions.
@@ -62,16 +60,17 @@ pub(super) struct MarshalStart<M> {
     /// Channels used for marshal backfill requests/responses.
     pub(super) backfill: (ChannelSender, ChannelReceiver),
     /// Application-level reporter that observes finalized blocks.
-    pub(super) application: FinalizedReporter,
+    pub(super) application: R,
 }
 
 /// Wire up the marshal actor for block dissemination/backfill and finalized reporting.
-pub(super) async fn start_marshal<M>(
+pub(super) async fn start_marshal<M, R>(
     context: &tokio::Context,
-    start: MarshalStart<M>,
+    start: MarshalStart<M, R>,
 ) -> anyhow::Result<marshal::Mailbox<ThresholdScheme, Block>>
 where
     M: commonware_p2p::Manager<PublicKey = Peer>,
+    R: Reporter<Activity = marshal::Update<Block>> + Send + 'static,
 {
     let MarshalStart {
         index,

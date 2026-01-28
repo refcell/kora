@@ -4,10 +4,7 @@
 
 use alloy_primitives::{Address, U256};
 use k256::ecdsa::SigningKey;
-use kora_domain::{
-    Tx,
-    evm::{address_from_key, sign_eip1559_transfer},
-};
+use kora_domain::{Tx, evm::Evm};
 
 use crate::chain::CHAIN_ID;
 #[derive(Clone, Debug)]
@@ -24,9 +21,9 @@ impl DemoTransfer {
     pub(super) fn new() -> Self {
         let sender = sender_key();
         let receiver = receiver_key();
-        let from = address_from_key(&sender);
-        let to = address_from_key(&receiver);
-        let tx = sign_eip1559_transfer(&sender, CHAIN_ID, to, U256::from(100u64), 0, 21_000);
+        let from = Evm::address_from_key(&sender);
+        let to = Evm::address_from_key(&receiver);
+        let tx = Evm::sign_eip1559_transfer(&sender, CHAIN_ID, to, U256::from(100u64), 0, 21_000);
 
         Self {
             from,

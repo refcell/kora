@@ -13,8 +13,7 @@ pub use channels::{
 
 mod config;
 pub use config::{
-    DEFAULT_BACKLOG, DEFAULT_MAX_MESSAGE_SIZE, DEFAULT_NAMESPACE, TransportConfig,
-    parse_bootstrappers, parse_ingress,
+    DEFAULT_BACKLOG, DEFAULT_MAX_MESSAGE_SIZE, DEFAULT_NAMESPACE, TransportConfig, TransportParsing,
 };
 
 mod error;

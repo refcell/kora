@@ -31,6 +31,10 @@ pub struct TransportConfig<C: commonware_cryptography::Signer> {
     pub(crate) backlog: usize,
 }
 
+/// Parsing helpers for transport configuration.
+#[derive(Debug)]
+pub struct TransportParsing;
+
 impl<C: commonware_cryptography::Signer> TransportConfig<C> {
     /// Create a recommended production configuration.
     ///
@@ -99,69 +103,71 @@ impl<C: commonware_cryptography::Signer> TransportConfig<C> {
     }
 }
 
-/// Parse a dialable address string into an [`Ingress`].
-///
-/// Supports both IP:port and hostname:port formats.
-pub fn parse_ingress(addr_str: &str) -> Result<Ingress, TransportError> {
-    // Try parsing as SocketAddr first (IP:port)
-    if let Ok(socket) = addr_str.parse::<SocketAddr>() {
-        return Ok(Ingress::Socket(socket));
+impl TransportParsing {
+    /// Parse a dialable address string into an [`Ingress`].
+    ///
+    /// Supports both IP:port and hostname:port formats.
+    pub fn parse_ingress(addr_str: &str) -> Result<Ingress, TransportError> {
+        // Try parsing as SocketAddr first (IP:port)
+        if let Ok(socket) = addr_str.parse::<SocketAddr>() {
+            return Ok(Ingress::Socket(socket));
+        }
+
+        // Otherwise parse as hostname:port
+        let (host, port_str) = addr_str
+            .rsplit_once(':')
+            .ok_or_else(|| TransportError::InvalidDialableAddr(addr_str.to_string()))?;
+
+        let port: u16 =
+            port_str.parse().map_err(|_| TransportError::InvalidPort(port_str.to_string()))?;
+
+        let hostname = commonware_utils::Hostname::new(host)
+            .map_err(|_| TransportError::InvalidHostname(host.to_string()))?;
+
+        Ok(Ingress::Dns { host: hostname, port })
     }
 
-    // Otherwise parse as hostname:port
-    let (host, port_str) = addr_str
-        .rsplit_once(':')
-        .ok_or_else(|| TransportError::InvalidDialableAddr(addr_str.to_string()))?;
+    /// Parse bootstrap peer strings into (PublicKey, Ingress) tuples.
+    ///
+    /// Expected format: `PUBLIC_KEY_HEX@HOST:PORT`
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let peers = TransportParsing::parse_bootstrappers(&[
+    ///     "abcd1234...@192.168.1.1:30303".to_string(),
+    ///     "efgh5678...@node.example.com:30303".to_string(),
+    /// ])?;
+    /// ```
+    pub fn parse_bootstrappers(
+        bootstrap_peers: &[String],
+    ) -> Result<Vec<(ed25519::PublicKey, Ingress)>, TransportError> {
+        bootstrap_peers
+            .iter()
+            .map(|peer_str| {
+                let (pk_hex, addr) = peer_str
+                    .split_once('@')
+                    .ok_or_else(|| TransportError::InvalidBootstrapPeer(peer_str.clone()))?;
 
-    let port: u16 =
-        port_str.parse().map_err(|_| TransportError::InvalidPort(port_str.to_string()))?;
+                // Parse public key from hex
+                let pk_hex = pk_hex.strip_prefix("0x").unwrap_or(pk_hex);
+                let pk_bytes = hex::decode(pk_hex)
+                    .map_err(|_| TransportError::InvalidPublicKeyHex(pk_hex.to_string()))?;
 
-    let hostname = commonware_utils::Hostname::new(host)
-        .map_err(|_| TransportError::InvalidHostname(host.to_string()))?;
+                if pk_bytes.len() != ed25519::PublicKey::SIZE {
+                    return Err(TransportError::InvalidPublicKeyLength(pk_bytes.len()));
+                }
 
-    Ok(Ingress::Dns { host: hostname, port })
-}
+                // Parse public key using the Read trait
+                let mut buf = pk_bytes.as_slice();
+                let public_key = ed25519::PublicKey::read(&mut buf)
+                    .map_err(|_| TransportError::InvalidPublicKey)?;
 
-/// Parse bootstrap peer strings into (PublicKey, Ingress) tuples.
-///
-/// Expected format: `PUBLIC_KEY_HEX@HOST:PORT`
-///
-/// # Examples
-///
-/// ```ignore
-/// let peers = parse_bootstrappers(&[
-///     "abcd1234...@192.168.1.1:30303".to_string(),
-///     "efgh5678...@node.example.com:30303".to_string(),
-/// ])?;
-/// ```
-pub fn parse_bootstrappers(
-    bootstrap_peers: &[String],
-) -> Result<Vec<(ed25519::PublicKey, Ingress)>, TransportError> {
-    bootstrap_peers
-        .iter()
-        .map(|peer_str| {
-            let (pk_hex, addr) = peer_str
-                .split_once('@')
-                .ok_or_else(|| TransportError::InvalidBootstrapPeer(peer_str.clone()))?;
+                // Parse ingress address
+                let ingress = Self::parse_ingress(addr)?;
 
-            // Parse public key from hex
-            let pk_hex = pk_hex.strip_prefix("0x").unwrap_or(pk_hex);
-            let pk_bytes = hex::decode(pk_hex)
-                .map_err(|_| TransportError::InvalidPublicKeyHex(pk_hex.to_string()))?;
-
-            if pk_bytes.len() != ed25519::PublicKey::SIZE {
-                return Err(TransportError::InvalidPublicKeyLength(pk_bytes.len()));
-            }
-
-            // Parse public key using the Read trait
-            let mut buf = pk_bytes.as_slice();
-            let public_key =
-                ed25519::PublicKey::read(&mut buf).map_err(|_| TransportError::InvalidPublicKey)?;
-
-            // Parse ingress address
-            let ingress = parse_ingress(addr)?;
-
-            Ok((public_key, ingress))
-        })
-        .collect()
+                Ok((public_key, ingress))
+            })
+            .collect()
+    }
 }

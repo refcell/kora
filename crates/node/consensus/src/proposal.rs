@@ -188,12 +188,6 @@ where
     }
 }
 
-/// Compute the transaction ID for a transaction.
-#[inline]
-pub fn tx_id(tx: &Tx) -> TxId {
-    tx.id()
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -548,9 +542,8 @@ mod tests {
     #[test]
     fn tx_id_computation() {
         let tx = Tx::new(vec![1, 2, 3, 4, 5].into());
-        let id = tx_id(&tx);
-        let expected = tx.id();
-        assert_eq!(id, expected);
+        let id = tx.id();
+        assert_eq!(id, tx.id());
     }
 
     #[test]

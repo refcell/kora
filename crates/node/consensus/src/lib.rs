@@ -16,9 +16,9 @@ mod ledger;
 pub use ledger::LedgerView;
 
 mod proposal;
-pub use proposal::{ProposalBuilder, tx_id};
+pub use proposal::ProposalBuilder;
 
 mod execution;
-pub use execution::{BlockExecution, execute_block};
+pub use execution::BlockExecution;
 
 pub mod components;

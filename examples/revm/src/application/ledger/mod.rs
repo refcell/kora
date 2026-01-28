@@ -365,10 +365,7 @@ mod tests {
     use commonware_utils::{NZU16, NZUsize};
     use k256::ecdsa::SigningKey;
     use kora_consensus::SnapshotStore as _;
-    use kora_domain::{
-        Block, ConsensusDigest, Tx,
-        evm::{address_from_key, sign_eip1559_transfer},
-    };
+    use kora_domain::{Block, ConsensusDigest, Tx, evm::Evm};
     use kora_executor::{BlockContext, BlockExecutor, RevmExecutor};
     use kora_qmdb_ledger::QmdbRefDb;
 
@@ -423,7 +420,14 @@ mod tests {
     }
 
     fn transfer_tx(from_key: &SigningKey, to: Address, value: u64, nonce: u64) -> Tx {
-        sign_eip1559_transfer(from_key, CHAIN_ID, to, U256::from(value), nonce, GAS_LIMIT_TRANSFER)
+        Evm::sign_eip1559_transfer(
+            from_key,
+            CHAIN_ID,
+            to,
+            U256::from(value),
+            nonce,
+            GAS_LIMIT_TRANSFER,
+        )
     }
 
     fn block_context(height: u64, prevrandao: B256) -> BlockContext {
@@ -493,8 +497,8 @@ mod tests {
             // Arrange
             let from_key = key_from_byte(FROM_BYTE_A);
             let to_key = key_from_byte(TO_BYTE_A);
-            let from = address_from_key(&from_key);
-            let to = address_from_key(&to_key);
+            let from = Evm::address_from_key(&from_key);
+            let to = Evm::address_from_key(&to_key);
             let setup = setup_ledger(
                 context,
                 "revm-ledger-merge",
@@ -560,8 +564,8 @@ mod tests {
             // Arrange
             let from_key = key_from_byte(FROM_BYTE_B);
             let to_key = key_from_byte(TO_BYTE_B);
-            let from = address_from_key(&from_key);
-            let to = address_from_key(&to_key);
+            let from = Evm::address_from_key(&from_key);
+            let to = Evm::address_from_key(&to_key);
             let setup = setup_ledger(
                 context,
                 "revm-ledger-dup",

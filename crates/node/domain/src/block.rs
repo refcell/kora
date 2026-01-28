@@ -5,7 +5,7 @@ use bytes::{Buf, BufMut};
 use commonware_codec::{Encode, EncodeSize, Error as CodecError, RangeCfg, Read, ReadExt, Write};
 use commonware_cryptography::{Committable, Digestible, Hasher as _, Sha256};
 
-use crate::{BlockId, StateRoot, Tx, TxCfg, read_b256, write_b256};
+use crate::{BlockId, Idents, StateRoot, Tx, TxCfg};
 
 #[derive(Clone, Copy, Debug)]
 /// Configuration used when decoding blocks and their transactions.
@@ -76,7 +76,7 @@ impl Write for Block {
     fn write(&self, buf: &mut impl BufMut) {
         self.parent.write(buf);
         self.height.write(buf);
-        write_b256(&self.prevrandao, buf);
+        Idents::write_b256(&self.prevrandao, buf);
         self.state_root.write(buf);
         self.txs.write(buf);
     }
@@ -98,7 +98,7 @@ impl Read for Block {
     fn read_cfg(buf: &mut impl Buf, cfg: &Self::Cfg) -> Result<Self, CodecError> {
         let parent = BlockId::read(buf)?;
         let height = u64::read(buf)?;
-        let prevrandao = read_b256(buf)?;
+        let prevrandao = Idents::read_b256(buf)?;
         let state_root = StateRoot::read(buf)?;
         let txs = Vec::<Tx>::read_cfg(buf, &(RangeCfg::new(0..=cfg.max_txs), cfg.tx))?;
         Ok(Self { parent, height, prevrandao, state_root, txs })

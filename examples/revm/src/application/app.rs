@@ -19,7 +19,7 @@ use commonware_consensus::{
 use commonware_cryptography::{Committable as _, certificate::Scheme as CertScheme};
 use commonware_runtime::{Clock, Metrics, Spawner};
 use futures::StreamExt as _;
-use kora_consensus::{Mempool, ProposalBuilder, execute_block};
+use kora_consensus::{BlockExecution, Mempool, ProposalBuilder};
 use kora_domain::{Block, ConsensusDigest, PublicKey, TxId};
 use kora_executor::{BlockContext, RevmExecutor};
 use kora_overlay::OverlayState;
@@ -138,10 +138,11 @@ where
 
     let executor = RevmExecutor::new(CHAIN_ID);
     let context = block_context(block.height, block.prevrandao);
-    let execution = match execute_block(&parent_snapshot, &executor, &context, &block.txs).await {
-        Ok(result) => result,
-        Err(_) => return false,
-    };
+    let execution =
+        match BlockExecution::execute(&parent_snapshot, &executor, &context, &block.txs).await {
+            Ok(result) => result,
+            Err(_) => return false,
+        };
     let merged_changes = parent_snapshot.state.merge_changes(execution.outcome.changes.clone());
     let state_root =
         match state.compute_root_from_store(parent_digest, execution.outcome.changes.clone()).await

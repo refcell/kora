@@ -4,7 +4,7 @@ use commonware_consensus::{Block as _, Reporter, marshal::Update};
 use commonware_cryptography::Committable as _;
 use commonware_runtime::{Spawner as _, tokio};
 use commonware_utils::acknowledgement::Acknowledgement as _;
-use kora_consensus::execute_block;
+use kora_consensus::BlockExecution;
 use kora_domain::Block;
 use kora_executor::{BlockContext, RevmExecutor};
 use kora_overlay::OverlayState;
@@ -46,15 +46,21 @@ async fn handle_finalized_update(
                 };
                 let executor = RevmExecutor::new(CHAIN_ID);
                 let context = block_context(block.height, block.prevrandao);
-                let execution =
-                    match execute_block(&parent_snapshot, &executor, &context, &block.txs).await {
-                        Ok(result) => result,
-                        Err(err) => {
-                            error!(?digest, error = ?err, "failed to execute finalized block");
-                            ack.acknowledge();
-                            return;
-                        }
-                    };
+                let execution = match BlockExecution::execute(
+                    &parent_snapshot,
+                    &executor,
+                    &context,
+                    &block.txs,
+                )
+                .await
+                {
+                    Ok(result) => result,
+                    Err(err) => {
+                        error!(?digest, error = ?err, "failed to execute finalized block");
+                        ack.acknowledge();
+                        return;
+                    }
+                };
                 let merged_changes =
                     parent_snapshot.state.merge_changes(execution.outcome.changes.clone());
                 let state_root = match state

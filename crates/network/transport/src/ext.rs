@@ -9,9 +9,8 @@ use kora_config::NetworkConfig;
 use rand_core::CryptoRngCore;
 
 use crate::{
-    NetworkTransport, TransportConfig, TransportError,
+    NetworkTransport, TransportConfig, TransportError, TransportParsing,
     config::{DEFAULT_MAX_MESSAGE_SIZE, DEFAULT_NAMESPACE},
-    parse_bootstrappers,
 };
 
 /// Extension trait for building transport from network configuration.
@@ -102,7 +101,7 @@ fn parse_network_config(
     // TODO: Add dialable_addr field to NetworkConfig for NAT traversal
     let dialable = Ingress::Socket(listen_addr);
 
-    let bootstrappers = parse_bootstrappers(&config.bootstrap_peers)?;
+    let bootstrappers = TransportParsing::parse_bootstrappers(&config.bootstrap_peers)?;
 
     Ok((listen_addr, dialable, bootstrappers))
 }

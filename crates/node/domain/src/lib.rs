@@ -19,7 +19,7 @@ mod block;
 pub use block::{Block, BlockCfg};
 
 mod idents;
-pub use idents::{BlockId, StateRoot, TxId, read_b256, write_b256};
+pub use idents::{BlockId, Idents, StateRoot, TxId};
 
 mod tx;
 pub use tx::{Tx, TxCfg};

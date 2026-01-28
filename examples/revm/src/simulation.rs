@@ -17,11 +17,9 @@ use kora_domain::{BootstrapConfig, ConsensusDigest, FinalizationEvent, StateRoot
 use kora_sys::FileLimitHandler;
 
 use crate::{
-    application::{
-        NodeEnvironment, ThresholdScheme, TransportContext, TransportControl, start_node,
-        threshold_schemes,
-    },
+    application::{ThresholdScheme, TransportContext, start_node, threshold_schemes},
     config::SimConfig,
+    environment::{SimEnvironment, SimTransport},
     outcome::SimOutcome,
 };
 
@@ -31,57 +29,6 @@ pub(super) const MAX_MSG_SIZE: usize = 1024 * 1024;
 pub(super) const P2P_LINK_LATENCY_MS: u64 = 5;
 
 type NodeHandle = crate::application::NodeHandle;
-type SimTransport = simulated::Oracle<ed25519::PublicKey, TransportContext>;
-
-fn transport_control(
-    transport: &SimTransport,
-    me: ed25519::PublicKey,
-) -> simulated::Control<ed25519::PublicKey, TransportContext> {
-    simulated::Oracle::control(transport, me)
-}
-
-fn transport_manager(
-    transport: &SimTransport,
-) -> simulated::Manager<ed25519::PublicKey, TransportContext> {
-    simulated::Oracle::manager(transport)
-}
-
-struct SimEnvironment<'a> {
-    context: tokio::Context,
-    transport: &'a mut SimTransport,
-}
-
-impl<'a> SimEnvironment<'a> {
-    const fn new(context: tokio::Context, transport: &'a mut SimTransport) -> Self {
-        Self { context, transport }
-    }
-}
-
-impl TransportControl for SimTransport {
-    type Control = simulated::Control<ed25519::PublicKey, TransportContext>;
-    type Manager = simulated::Manager<ed25519::PublicKey, TransportContext>;
-
-    fn control(&self, me: ed25519::PublicKey) -> Self::Control {
-        transport_control(self, me)
-    }
-
-    fn manager(&self) -> Self::Manager {
-        transport_manager(self)
-    }
-}
-
-impl NodeEnvironment for SimEnvironment<'_> {
-    type Transport = SimTransport;
-
-    fn context(&self) -> tokio::Context {
-        self.context.clone()
-    }
-
-    fn transport(&mut self) -> &mut SimTransport {
-        self.transport
-    }
-}
-
 /// Run the multi-node simulation and return the final outcome.
 pub(crate) fn simulate(cfg: SimConfig) -> anyhow::Result<SimOutcome> {
     FileLimitHandler::new().raise();

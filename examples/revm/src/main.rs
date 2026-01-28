@@ -8,6 +8,7 @@ mod chain;
 mod cli;
 mod config;
 mod demo;
+mod environment;
 mod outcome;
 mod simulation;
 

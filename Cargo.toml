@@ -55,7 +55,9 @@ kora-executor = { path = "crates/node/executor" }
 kora-ledger = { path = "crates/node/ledger" }
 kora-reporters = { path = "crates/node/reporters" }
 kora-service = { path = "crates/node/service" }
+kora-simplex = { path = "crates/node/simplex" }
 kora-transport = { path = "crates/network/transport" }
+kora-transport-sim = { path = "crates/network/transport-sim" }
 kora-sys = { path = "crates/utilities/sys" }
 kora-handlers = { path = "crates/storage/handlers" }
 kora-overlay = { path = "crates/storage/overlay" }

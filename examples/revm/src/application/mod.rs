@@ -8,7 +8,6 @@ mod observers;
 pub(crate) use app::RevmApplication;
 pub(crate) use handle::NodeHandle;
 pub(crate) use node::{
-    NodeEnvironment, ThresholdScheme, TransportContext, TransportControl, start_node,
-    threshold_schemes,
+    NodeEnvironment, ThresholdScheme, TransportControl, start_node, threshold_schemes,
 };
 pub(crate) use observers::LedgerObservers;

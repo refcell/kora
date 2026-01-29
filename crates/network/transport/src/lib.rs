@@ -5,6 +5,9 @@
 
 mod builder;
 
+mod bundle;
+pub use bundle::TransportBundle;
+
 mod channels;
 pub use channels::{
     CHANNEL_BACKFILL, CHANNEL_BLOCKS, CHANNEL_CERTS, CHANNEL_RESOLVER, CHANNEL_VOTES,
@@ -21,6 +24,12 @@ pub use error::TransportError;
 
 mod ext;
 pub use ext::NetworkConfigExt;
+
+mod provider;
+pub use provider::TransportProvider;
+
+mod network_provider;
+pub use network_provider::{NetworkControl, NetworkTransportProvider};
 
 mod transport;
 pub use transport::NetworkTransport;

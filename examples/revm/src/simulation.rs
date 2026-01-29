@@ -16,8 +16,10 @@ use futures::{StreamExt as _, channel::mpsc};
 use kora_domain::{BootstrapConfig, ConsensusDigest, FinalizationEvent, StateRoot};
 use kora_sys::FileLimitHandler;
 
+use kora_transport_sim::SimContext;
+
 use crate::{
-    application::{ThresholdScheme, TransportContext, start_node, threshold_schemes},
+    application::{ThresholdScheme, start_node, threshold_schemes},
     config::SimConfig,
     environment::{SimEnvironment, SimTransport},
     outcome::SimOutcome,
@@ -101,7 +103,7 @@ async fn start_network(
     participants: Set<ed25519::PublicKey>,
 ) -> SimTransport {
     let (network, transport) = simulated::Network::new(
-        TransportContext::new(context.with_label("network")),
+        SimContext::new(context.with_label("network")),
         simulated::Config {
             max_size: MAX_MSG_SIZE as u32,
             disconnect_on_block: true,

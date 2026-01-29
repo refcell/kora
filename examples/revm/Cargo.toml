@@ -22,7 +22,9 @@ kora-executor.workspace = true
 kora-ledger.workspace = true
 kora-overlay.workspace = true
 kora-reporters.workspace = true
+kora-simplex.workspace = true
 kora-sys.workspace = true
+kora-transport-sim.workspace = true
 
 # Commonware
 commonware-p2p.workspace = true
@@ -40,8 +42,6 @@ clap.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 futures.workspace = true
-governor.workspace = true
-prometheus-client.workspace = true
 
 # Execution
 alloy-evm = { workspace = true, features = ["std"] }

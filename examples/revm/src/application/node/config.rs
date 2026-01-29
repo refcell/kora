@@ -10,54 +10,35 @@ use commonware_cryptography::{
 };
 use commonware_p2p::simulated;
 use commonware_runtime::{Quota, buffer::PoolRef};
-use commonware_utils::{N3f1, NZU16, NZU32, NZUsize, TryCollect as _, ordered::Set};
+use commonware_utils::{N3f1, TryCollect as _, ordered::Set};
 use kora_domain::{BlockCfg, PublicKey, TxCfg};
+use kora_simplex::{DefaultPool, DefaultQuota};
+use kora_transport_sim::SimContext;
 use rand::{SeedableRng as _, rngs::StdRng};
-
-use super::TransportContext;
 
 pub(crate) type ThresholdScheme = bls12381_threshold::Scheme<PublicKey, MinSig>;
 
 /// Namespace used by simplex votes in this example.
 pub(crate) const SIMPLEX_NAMESPACE: &[u8] = b"_COMMONWARE_REVM_SIMPLEX";
 
-/// Mailbox depth for each simulated transport channel.
-pub(crate) const MAILBOX_SIZE: usize = 1024;
-/// Channel id used for voting traffic.
-pub(crate) const CHANNEL_VOTES: u64 = 0;
-/// Channel id used for certificate gossip delivery.
-pub(crate) const CHANNEL_CERTS: u64 = 1;
-/// Channel id used for resolver/backfill requests.
-pub(crate) const CHANNEL_RESOLVER: u64 = 2;
-/// Channel id used for full block broadcast traffic.
-pub(crate) const CHANNEL_BLOCKS: u64 = 3;
-// Marshal backfill requests/responses use a resolver protocol and are kept separate from the
-// best-effort broadcast channel used for full blocks.
-/// Channel id used for marshal backfill replies.
-pub(crate) const CHANNEL_BACKFILL: u64 = 4;
-/// Maximum transactions per block encoded by the REVM codec.
+pub(crate) use kora_simplex::DEFAULT_MAILBOX_SIZE as MAILBOX_SIZE;
+
 const BLOCK_CODEC_MAX_TXS: usize = 64;
-/// Maximum encoded transaction bytes per transaction admitted by the block codec.
 const BLOCK_CODEC_MAX_TX_BYTES: usize = 1024;
 
 pub(crate) type Peer = PublicKey;
-pub(crate) type ChannelSender = simulated::Sender<Peer, TransportContext>;
+pub(crate) type ChannelSender = simulated::Sender<Peer, SimContext>;
 pub(crate) type ChannelReceiver = simulated::Receiver<Peer>;
 
-// This example keeps everything in a single epoch for simplicity. The `Marshaled` wrapper also
-// supports epoch boundaries, but exercising that logic is out-of-scope for this demo.
 pub(crate) const EPOCH_LENGTH: u64 = u64::MAX;
-/// Partition prefix used for node-local storage.
 pub(crate) const PARTITION_PREFIX: &str = "revm";
 
-/// Default rate limit applied to simulated transport channels.
-pub(crate) const fn default_quota() -> Quota {
-    Quota::per_second(NZU32!(1_000))
+pub(crate) fn default_quota() -> Quota {
+    DefaultQuota::init()
 }
 
-/// Default buffer pool used by node-local storage.
 pub(crate) fn default_buffer_pool() -> PoolRef {
-    PoolRef::new(NZU16!(16_384), NZUsize!(10_000))
+    DefaultPool::init()
 }
 
 /// Default block codec configuration for REVM transactions.

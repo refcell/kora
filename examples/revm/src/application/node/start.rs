@@ -20,9 +20,9 @@ use kora_executor::{BlockContext, RevmExecutor};
 use kora_ledger::{LedgerService, LedgerView};
 use kora_reporters::{BlockContextProvider, FinalizedReporter, SeedReporter};
 
+use kora_transport_sim::{SimContext, register_node_channels};
+
 use super::{
-    TransportContext,
-    channels::{NodeChannels, register_channels},
     config::{
         EPOCH_LENGTH, MAILBOX_SIZE, PARTITION_PREFIX, Peer, ThresholdScheme, block_codec_cfg,
         default_buffer_pool, default_quota,
@@ -72,8 +72,8 @@ pub(crate) async fn start_node<E>(
 where
     E: NodeEnvironment,
     E::Transport: TransportControl<
-            Control = simulated::Control<Peer, TransportContext>,
-            Manager = simulated::Manager<Peer, TransportContext>,
+            Control = simulated::Control<Peer, SimContext>,
+            Manager = simulated::Manager<Peer, SimContext>,
         >,
 {
     let context = env.context();
@@ -87,8 +87,9 @@ where
     };
     let blocker = control.clone();
 
-    let NodeChannels { votes, certs, resolver, blocks, backfill } =
-        register_channels(&mut control, quota).await?;
+    let channels = register_node_channels(&mut control, quota)
+        .await
+        .map_err(|e| anyhow::anyhow!("channel registration failed: {e}"))?;
 
     let block_cfg = block_codec_cfg();
     let state = LedgerView::init(
@@ -132,8 +133,8 @@ where
             scheme: scheme.clone(),
             buffer_pool: buffer_pool.clone(),
             block_codec_config: block_cfg,
-            blocks,
-            backfill,
+            blocks: channels.marshal.blocks,
+            backfill: channels.marshal.backfill,
             application: finalized_reporter,
         },
     )
@@ -184,7 +185,11 @@ where
             buffer_pool,
         },
     );
-    engine.start(votes, certs, resolver);
+    engine.start(
+        channels.simplex.votes,
+        channels.simplex.certs,
+        channels.simplex.resolver,
+    );
 
     Ok(handle)
 }

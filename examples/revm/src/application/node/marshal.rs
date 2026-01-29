@@ -12,6 +12,7 @@ use commonware_runtime::{Metrics as _, buffer::PoolRef, tokio};
 use commonware_storage::archive::immutable;
 use commonware_utils::{NZU64, NZUsize, acknowledgement::Exact};
 use kora_domain::{Block, BlockCfg};
+use kora_transport_sim::SimContext;
 
 use super::config::{
     ChannelReceiver, ChannelSender, EPOCH_LENGTH, MAILBOX_SIZE, Peer, ThresholdScheme,
@@ -46,7 +47,7 @@ pub(super) struct MarshalStart<M, R> {
     /// Node identity key used for network links.
     pub(super) public_key: Peer,
     /// Control channel used to register and rate-limit transport channels.
-    pub(super) control: simulated::Control<Peer, super::TransportContext>,
+    pub(super) control: simulated::Control<Peer, SimContext>,
     /// P2P manager holding the transport/peering state.
     pub(super) manager: M,
     /// Threshold signing scheme for this node.

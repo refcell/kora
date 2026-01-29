@@ -1,0 +1,24 @@
+[package]
+name = "kora-transport-sim"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Simulated P2P transport for Kora node testing and development."
+
+[lints]
+workspace = true
+
+[dependencies]
+kora-transport.workspace = true
+
+commonware-p2p.workspace = true
+commonware-runtime.workspace = true
+commonware-cryptography.workspace = true
+commonware-utils.workspace = true
+
+governor.workspace = true
+prometheus-client.workspace = true
+rand.workspace = true
+thiserror.workspace = true

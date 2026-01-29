@@ -3322,7 +3322,6 @@ dependencies = [
  "commonware-storage",
  "commonware-utils",
  "futures",
- "governor",
  "k256",
  "kora-consensus",
  "kora-domain",
@@ -3330,8 +3329,9 @@ dependencies = [
  "kora-ledger",
  "kora-overlay",
  "kora-reporters",
+ "kora-simplex",
  "kora-sys",
- "prometheus-client",
+ "kora-transport-sim",
  "rand 0.8.5",
  "tracing",
 ]
@@ -3395,6 +3395,21 @@ dependencies = [
  "rand_core 0.6.4",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "kora-transport-sim"
+version = "0.1.0"
+dependencies = [
+ "commonware-cryptography",
+ "commonware-p2p",
+ "commonware-runtime",
+ "commonware-utils",
+ "governor",
+ "kora-transport",
+ "prometheus-client",
+ "rand 0.8.5",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

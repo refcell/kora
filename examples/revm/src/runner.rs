@@ -1,44 +1,190 @@
-//! REVM node runner implementing the NodeRunner trait.
-
-use std::fmt;
-use std::time::Duration;
+use std::{fmt, sync::Arc, time::Duration};
 
 use alloy_consensus::Header;
 use alloy_primitives::Address;
 use anyhow::Context as _;
 use commonware_consensus::{
-    Reporters,
+    Reporter, Reporters,
     application::marshaled::Marshaled,
-    simplex::{self, elector::Random},
+    marshal,
+    simplex::{self, elector::Random, types::Finalization},
     types::{Epoch, FixedEpocher, ViewDelta},
 };
 use commonware_cryptography::bls12381::primitives::variant::MinSig;
 use commonware_p2p::simulated;
 use commonware_parallel::Sequential;
-use commonware_runtime::{Metrics as _, Spawner as _};
-use commonware_utils::{NZU64, NZUsize};
+use commonware_runtime::{Metrics as _, Quota, Spawner, buffer::PoolRef, tokio};
+use commonware_utils::{NZU64, NZUsize, acknowledgement::Exact};
 use futures::{StreamExt as _, channel::mpsc};
-use kora_domain::{Block, BootstrapConfig, FinalizationEvent, LedgerEvent, PublicKey};
+use kora_crypto::ThresholdScheme;
+use kora_domain::{
+    Block, BlockCfg, BootstrapConfig, ConsensusDigest, FinalizationEvent, LedgerEvent, PublicKey,
+    TxCfg,
+};
 use kora_executor::{BlockContext, RevmExecutor};
 use kora_ledger::{LedgerService, LedgerView};
+use kora_marshal::{ArchiveInitializer, BroadcastInitializer, PeerInitializer};
 use kora_reporters::{BlockContextProvider, FinalizedReporter, SeedReporter};
 use kora_service::{NodeRunContext, NodeRunner};
+use kora_simplex::{DEFAULT_MAILBOX_SIZE as MAILBOX_SIZE, DefaultPool, DefaultQuota};
 use kora_transport_sim::{SimContext, register_node_channels};
+use tracing::{debug, trace};
 
 use crate::{
-    app::RevmApplication,
-    chain::{BLOCK_GAS_LIMIT, CHAIN_ID},
+    app::{BLOCK_GAS_LIMIT, CHAIN_ID, RevmApplication},
     handle::NodeHandle,
-    node::{
-        ThresholdScheme,
-        config::{
-            EPOCH_LENGTH, MAILBOX_SIZE, PARTITION_PREFIX, block_codec_cfg, default_buffer_pool,
-            default_quota,
-        },
-        marshal::{MarshalStart, start_marshal},
-    },
-    observers::LedgerObservers,
 };
+
+const BLOCK_CODEC_MAX_TXS: usize = 64;
+const BLOCK_CODEC_MAX_TX_BYTES: usize = 1024;
+const EPOCH_LENGTH: u64 = u64::MAX;
+const PARTITION_PREFIX: &str = "revm";
+
+type Peer = PublicKey;
+type ChannelSender = simulated::Sender<Peer, SimContext>;
+type ChannelReceiver = simulated::Receiver<Peer>;
+type CertArchive = Finalization<ThresholdScheme, ConsensusDigest>;
+
+fn default_quota() -> Quota {
+    DefaultQuota::init()
+}
+
+fn default_buffer_pool() -> PoolRef {
+    DefaultPool::init()
+}
+
+const fn block_codec_cfg() -> BlockCfg {
+    BlockCfg { max_txs: BLOCK_CODEC_MAX_TXS, tx: TxCfg { max_tx_bytes: BLOCK_CODEC_MAX_TX_BYTES } }
+}
+
+#[derive(Clone)]
+struct ConstantSchemeProvider(Arc<ThresholdScheme>);
+
+impl commonware_cryptography::certificate::Provider for ConstantSchemeProvider {
+    type Scope = Epoch;
+    type Scheme = ThresholdScheme;
+
+    fn scoped(&self, _epoch: Epoch) -> Option<Arc<Self::Scheme>> {
+        Some(self.0.clone())
+    }
+
+    fn all(&self) -> Option<Arc<Self::Scheme>> {
+        Some(self.0.clone())
+    }
+}
+
+impl From<ThresholdScheme> for ConstantSchemeProvider {
+    fn from(scheme: ThresholdScheme) -> Self {
+        Self(Arc::new(scheme))
+    }
+}
+
+struct MarshalStart<M, R> {
+    index: usize,
+    partition_prefix: String,
+    public_key: Peer,
+    control: simulated::Control<Peer, SimContext>,
+    manager: M,
+    scheme: ThresholdScheme,
+    buffer_pool: PoolRef,
+    block_codec_config: BlockCfg,
+    blocks: (ChannelSender, ChannelReceiver),
+    backfill: (ChannelSender, ChannelReceiver),
+    application: R,
+}
+
+async fn start_marshal<M, R>(
+    context: &tokio::Context,
+    start: MarshalStart<M, R>,
+) -> anyhow::Result<marshal::Mailbox<ThresholdScheme, Block>>
+where
+    M: commonware_p2p::Manager<PublicKey = Peer>,
+    R: Reporter<Activity = marshal::Update<Block>> + Send + 'static,
+{
+    let MarshalStart {
+        index,
+        partition_prefix,
+        public_key,
+        control,
+        manager,
+        scheme,
+        buffer_pool,
+        block_codec_config,
+        blocks,
+        backfill,
+        application,
+    } = start;
+
+    let ctx = context.with_label(&format!("marshal_{index}"));
+    let partition_prefix = format!("{partition_prefix}-marshal-{index}");
+    let scheme_provider = ConstantSchemeProvider::from(scheme);
+
+    let resolver = PeerInitializer::init::<_, _, _, Block, _, _, _>(
+        &ctx,
+        public_key.clone(),
+        manager,
+        control,
+        backfill,
+    );
+
+    let (broadcast_engine, buffer) = BroadcastInitializer::init::<_, PublicKey, Block>(
+        ctx.with_label("broadcast"),
+        public_key,
+        block_codec_config,
+    );
+    broadcast_engine.start(blocks);
+
+    let cert_codec_config =
+        <ThresholdScheme as commonware_cryptography::certificate::Scheme>::certificate_codec_config_unbounded();
+    let finalizations_by_height = ArchiveInitializer::init::<_, ConsensusDigest, CertArchive>(
+        ctx.with_label("finalizations_by_height"),
+        format!("{partition_prefix}-finalizations-by-height"),
+        cert_codec_config,
+    )
+    .await
+    .context("init finalizations archive")?;
+
+    let finalized_blocks = ArchiveInitializer::init::<_, ConsensusDigest, Block>(
+        ctx.with_label("finalized_blocks"),
+        format!("{partition_prefix}-finalized-blocks"),
+        block_codec_config,
+    )
+    .await
+    .context("init blocks archive")?;
+
+    let (actor, mailbox, _last_processed_height) =
+        kora_marshal::ActorInitializer::init::<_, Block, _, _, _, Exact>(
+            ctx.clone(),
+            finalizations_by_height,
+            finalized_blocks,
+            scheme_provider,
+            buffer_pool,
+            block_codec_config,
+        )
+        .await;
+    actor.start(application, buffer, resolver);
+
+    Ok(mailbox)
+}
+
+fn spawn_ledger_observers<S: Spawner>(service: LedgerService, spawner: S) {
+    let mut receiver = service.subscribe();
+    spawner.shared(true).spawn(move |_| async move {
+        while let Some(event) = receiver.next().await {
+            match event {
+                LedgerEvent::TransactionSubmitted(id) => {
+                    trace!(tx=?id, "mempool accepted transaction");
+                }
+                LedgerEvent::SeedUpdated(digest, seed) => {
+                    debug!(digest=?digest, seed=?seed, "seed cache refreshed");
+                }
+                LedgerEvent::SnapshotPersisted(digest) => {
+                    trace!(?digest, "snapshot persisted");
+                }
+            }
+        }
+    });
+}
 
 #[derive(Debug)]
 pub(crate) struct RunnerError(anyhow::Error);
@@ -86,7 +232,6 @@ impl BlockContextProvider for RevmContextProvider {
     }
 }
 
-/// REVM node runner configuration.
 #[derive(Clone)]
 pub(crate) struct RevmNodeRunner {
     pub(crate) index: usize,
@@ -102,10 +247,7 @@ impl NodeRunner for RevmNodeRunner {
     type Handle = NodeHandle;
     type Error = RunnerError;
 
-    async fn run(
-        &self,
-        ctx: NodeRunContext<Self::Transport>,
-    ) -> Result<Self::Handle, Self::Error> {
+    async fn run(&self, ctx: NodeRunContext<Self::Transport>) -> Result<Self::Handle, Self::Error> {
         let (context, _config, mut control) = ctx.into_parts();
 
         let quota = default_quota();
@@ -130,7 +272,7 @@ impl NodeRunner for RevmNodeRunner {
         .context("init qmdb")?;
 
         let ledger = LedgerService::new(state.clone());
-        LedgerObservers::spawn(ledger.clone(), context.clone());
+        spawn_ledger_observers(ledger.clone(), context.clone());
         let mut domain_events = ledger.subscribe();
         let finalized_tx_clone = self.finalized_tx.clone();
         let node_id = index as u32;
@@ -208,11 +350,7 @@ impl NodeRunner for RevmNodeRunner {
                 buffer_pool,
             },
         );
-        engine.start(
-            channels.simplex.votes,
-            channels.simplex.certs,
-            channels.simplex.resolver,
-        );
+        engine.start(channels.simplex.votes, channels.simplex.certs, channels.simplex.resolver);
 
         Ok(handle)
     }

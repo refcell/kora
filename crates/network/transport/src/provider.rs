@@ -24,5 +24,6 @@ pub trait TransportProvider<P: PublicKey, E: Clock> {
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Build the transport and return the channel bundle with control handle.
+    #[allow(clippy::type_complexity)]
     fn build(self, context: E) -> Result<(TransportBundle<P, E>, Self::Control), Self::Error>;
 }

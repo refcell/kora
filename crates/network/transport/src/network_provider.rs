@@ -24,7 +24,7 @@ pub struct NetworkTransportProvider<C: Signer> {
 
 impl<C: Signer> NetworkTransportProvider<C> {
     /// Create a new provider from transport configuration.
-    pub fn new(config: TransportConfig<C>, quota: Quota) -> Self {
+    pub const fn new(config: TransportConfig<C>, quota: Quota) -> Self {
         Self { config, quota }
     }
 }

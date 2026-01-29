@@ -8,46 +8,17 @@ use commonware_cryptography::{
     },
     ed25519,
 };
-use commonware_p2p::simulated;
-use commonware_runtime::{Quota, buffer::PoolRef};
 use commonware_utils::{N3f1, TryCollect as _, ordered::Set};
-use kora_domain::{BlockCfg, PublicKey, TxCfg};
-use kora_simplex::{DefaultPool, DefaultQuota};
-use kora_transport_sim::SimContext;
+use kora_domain::PublicKey;
 use rand::{SeedableRng as _, rngs::StdRng};
 
-pub(crate) type ThresholdScheme = bls12381_threshold::Scheme<PublicKey, MinSig>;
+/// Threshold BLS signing scheme using MinSig variant.
+pub type ThresholdScheme = bls12381_threshold::Scheme<PublicKey, MinSig>;
 
-/// Namespace used by simplex votes in this example.
-pub(crate) const SIMPLEX_NAMESPACE: &[u8] = b"_COMMONWARE_REVM_SIMPLEX";
+const SIMPLEX_NAMESPACE: &[u8] = b"_COMMONWARE_REVM_SIMPLEX";
 
-pub(crate) use kora_simplex::DEFAULT_MAILBOX_SIZE as MAILBOX_SIZE;
-
-const BLOCK_CODEC_MAX_TXS: usize = 64;
-const BLOCK_CODEC_MAX_TX_BYTES: usize = 1024;
-
-pub(crate) type Peer = PublicKey;
-pub(crate) type ChannelSender = simulated::Sender<Peer, SimContext>;
-pub(crate) type ChannelReceiver = simulated::Receiver<Peer>;
-
-pub(crate) const EPOCH_LENGTH: u64 = u64::MAX;
-pub(crate) const PARTITION_PREFIX: &str = "revm";
-
-pub(crate) fn default_quota() -> Quota {
-    DefaultQuota::init()
-}
-
-pub(crate) fn default_buffer_pool() -> PoolRef {
-    DefaultPool::init()
-}
-
-/// Default block codec configuration for REVM transactions.
-pub(crate) const fn block_codec_cfg() -> BlockCfg {
-    BlockCfg { max_txs: BLOCK_CODEC_MAX_TXS, tx: TxCfg { max_tx_bytes: BLOCK_CODEC_MAX_TX_BYTES } }
-}
-
-/// Derive deterministic participants and threshold-simplex signing schemes.
-pub(crate) fn threshold_schemes(
+/// Generate deterministic threshold BLS signing schemes for testing.
+pub fn threshold_schemes(
     seed: u64,
     n: usize,
 ) -> anyhow::Result<(Vec<PublicKey>, Vec<ThresholdScheme>)> {

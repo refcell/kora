@@ -1,12 +1,3 @@
-//! Consensus-facing application implementation for the REVM chain example.
-//!
-//! Threshold-simplex orders only block commitments (digests). Full blocks are disseminated and
-//! backfilled by `commonware_consensus::marshal`. The `commonware_consensus::application::marshaled::Marshaled`
-//! wrapper bridges these layers by fetching required ancestors from marshal and calling into this
-//! module with an `AncestorStream` you can iterate to walk back over pending blocks.
-//!
-//! The node wiring that wraps this application lives in `examples/revm/src/application/node.rs`.
-
 use std::{collections::BTreeSet, marker::PhantomData};
 
 use alloy_consensus::Header;
@@ -26,7 +17,8 @@ use kora_ledger::{LedgerService, LedgerView};
 use kora_overlay::OverlayState;
 use rand::Rng;
 
-use crate::chain::{BLOCK_GAS_LIMIT, CHAIN_ID};
+pub(crate) const CHAIN_ID: u64 = 1337;
+pub(crate) const BLOCK_GAS_LIMIT: u64 = 30_000_000;
 
 fn block_context(height: u64, prevrandao: B256) -> BlockContext {
     let header = Header {
@@ -66,9 +58,7 @@ impl<M: Mempool> Mempool for FilteredMempool<M> {
     }
 }
 
-/// Helper function for propose that owns all its inputs.
 async fn propose_inner<S>(
-    // Ledger service commands for proposal preparation.
     state: LedgerService,
     max_txs: usize,
     mut ancestry: AncestorStream<S, Block>,
@@ -78,8 +68,6 @@ where
 {
     let parent = ancestry.next().await?;
 
-    // Drain the ancestry stream so marshal can backfill missing blocks and
-    // exclude pending ancestor txs from new proposals.
     let mut excluded = BTreeSet::<TxId>::new();
     for tx in parent.txs.iter() {
         excluded.insert(tx.id());
@@ -116,7 +104,6 @@ where
     Some(child)
 }
 
-/// Helper function for verify that owns all its inputs.
 async fn verify_inner<S>(state: LedgerService, mut ancestry: AncestorStream<S, Block>) -> bool
 where
     S: CertScheme,
@@ -169,18 +156,13 @@ where
 }
 
 #[derive(Clone)]
-/// Consensus-facing REVM application that bridges marshal and REVM state.
 pub(crate) struct RevmApplication<S> {
-    /// Maximum number of transactions to include when proposing new blocks.
     max_txs: usize,
-    /// Ledger service used to orchestrate ledger commands.
     state: LedgerService,
-    /// Marker tracking the signing scheme used by this application instance.
     _scheme: PhantomData<S>,
 }
 
 impl<S> RevmApplication<S> {
-    /// Create a REVM application with the shared state handle.
     pub(crate) fn new(max_txs: usize, state: LedgerView) -> Self {
         Self { max_txs, state: LedgerService::new(state), _scheme: PhantomData }
     }

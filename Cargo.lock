@@ -3160,6 +3160,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "kora-crypto"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "commonware-consensus",
+ "commonware-cryptography",
+ "commonware-utils",
+ "kora-domain",
+ "rand 0.8.5",
+]
+
+[[package]]
 name = "kora-domain"
 version = "0.1.0"
 dependencies = [
@@ -3313,21 +3325,21 @@ dependencies = [
  "alloy-primitives",
  "anyhow",
  "clap",
- "commonware-broadcast",
  "commonware-consensus",
  "commonware-cryptography",
  "commonware-p2p",
  "commonware-parallel",
  "commonware-runtime",
- "commonware-storage",
  "commonware-utils",
  "futures",
  "k256",
  "kora-config",
  "kora-consensus",
+ "kora-crypto",
  "kora-domain",
  "kora-executor",
  "kora-ledger",
+ "kora-marshal",
  "kora-overlay",
  "kora-reporters",
  "kora-service",

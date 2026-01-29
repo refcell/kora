@@ -1,7 +1,9 @@
 //! Simulated transport provider implementation.
 
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use commonware_cryptography::PublicKey;
 use commonware_p2p::{Manager as _, simulated};
@@ -12,8 +14,10 @@ use kora_transport::{
     CHANNEL_BACKFILL, CHANNEL_BLOCKS, CHANNEL_CERTS, CHANNEL_RESOLVER, CHANNEL_VOTES,
 };
 
-use crate::channels::{SimMarshalChannels, SimSimplexChannels};
-use crate::{SimContext, SimTransportError};
+use crate::{
+    SimContext, SimTransportError,
+    channels::{SimMarshalChannels, SimSimplexChannels},
+};
 
 /// Configuration for simulated network links.
 #[derive(Debug, Clone)]
@@ -78,6 +82,23 @@ impl<P: PublicKey> SimControl<P> {
     /// Returns the network manager.
     pub fn manager(&self) -> simulated::Manager<P, SimContext> {
         self.oracle.manager()
+    }
+
+    /// Connects all peers to each other with the given link configuration.
+    pub async fn connect_all(
+        &mut self,
+        peers: &[P],
+        link: SimLinkConfig,
+    ) -> Result<(), simulated::Error> {
+        for a in peers.iter() {
+            for b in peers.iter() {
+                if a == b {
+                    continue;
+                }
+                self.oracle.add_link(a.clone(), b.clone(), link.clone().into()).await?;
+            }
+        }
+        Ok(())
     }
 }
 

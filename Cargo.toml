@@ -48,11 +48,13 @@ codegen-units = 1
 # Local crates
 kora-domain = { path = "crates/node/domain" }
 kora-cli = { path = "crates/utilities/cli" }
+kora-crypto = { path = "crates/utilities/crypto" }
 kora-backend = { path = "crates/storage/backend" }
 kora-config = { path = "crates/node/config" }
 kora-consensus = { path = "crates/node/consensus" }
 kora-executor = { path = "crates/node/executor" }
 kora-ledger = { path = "crates/node/ledger" }
+kora-marshal = { path = "crates/network/marshal" }
 kora-reporters = { path = "crates/node/reporters" }
 kora-service = { path = "crates/node/service" }
 kora-simplex = { path = "crates/node/simplex" }

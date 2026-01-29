@@ -17,10 +17,12 @@ bench = false
 [dependencies]
 # Workspace
 kora-config.workspace = true
+kora-crypto = { workspace = true, features = ["test-utils"] }
 kora-domain = { workspace = true, features = ["evm"] }
 kora-consensus.workspace = true
 kora-executor.workspace = true
 kora-ledger.workspace = true
+kora-marshal.workspace = true
 kora-overlay.workspace = true
 kora-reporters.workspace = true
 kora-service.workspace = true
@@ -32,9 +34,7 @@ kora-transport-sim.workspace = true
 commonware-p2p.workspace = true
 commonware-utils.workspace = true
 commonware-runtime.workspace = true
-commonware-storage.workspace = true
 commonware-parallel.workspace = true
-commonware-broadcast.workspace = true
 commonware-consensus.workspace = true
 commonware-cryptography.workspace = true
 

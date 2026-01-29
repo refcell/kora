@@ -1,39 +1,56 @@
-//! Simulation harness for the example chain.
-//!
-//! Spawns N nodes in a single process using the tokio runtime and the simulated P2P transport.
-//! The harness waits for a fixed number of finalized blocks and asserts all nodes converge on the
-//! same head, state commitment, and balances.
-
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
-use alloy_evm::revm::primitives::B256;
+use alloy_primitives::{Address, B256, U256};
 use anyhow::Context as _;
 use commonware_cryptography::ed25519;
 use commonware_p2p::{Manager as _, simulated};
 use commonware_runtime::{Metrics as _, Runner as _, tokio};
 use commonware_utils::{TryCollect as _, ordered::Set};
 use futures::{StreamExt as _, channel::mpsc};
+use k256::ecdsa::SigningKey;
 use kora_config::NodeConfig;
-use kora_domain::{BootstrapConfig, ConsensusDigest, FinalizationEvent, StateRoot};
+use kora_crypto::{ThresholdScheme, threshold_schemes};
+use kora_domain::{BootstrapConfig, ConsensusDigest, FinalizationEvent, StateRoot, Tx, evm::Evm};
 use kora_service::KoraNodeService;
 use kora_sys::FileLimitHandler;
-use kora_transport_sim::{SimContext, SimControl, SimTransportProvider};
+use kora_transport_sim::{SimContext, SimControl, SimLinkConfig, SimTransportProvider};
 
 use crate::{
-    config::SimConfig,
-    handle::NodeHandle,
-    node::{ThresholdScheme, threshold_schemes},
-    outcome::SimOutcome,
-    runner::RevmNodeRunner,
+    app::CHAIN_ID, cli::SimConfig, handle::NodeHandle, outcome::SimOutcome, runner::RevmNodeRunner,
 };
 
 const MAX_MSG_SIZE: usize = 1024 * 1024;
-const P2P_LINK_LATENCY_MS: u64 = 5;
+
+struct DemoTransfer {
+    from: Address,
+    to: Address,
+    alloc: Vec<(Address, U256)>,
+    tx: Tx,
+    expected_from: U256,
+    expected_to: U256,
+}
+
+impl DemoTransfer {
+    fn new() -> Self {
+        let sender = SigningKey::from_bytes(&[1u8; 32].into()).expect("valid sender key");
+        let receiver = SigningKey::from_bytes(&[2u8; 32].into()).expect("valid receiver key");
+        let from = Evm::address_from_key(&sender);
+        let to = Evm::address_from_key(&receiver);
+        let tx = Evm::sign_eip1559_transfer(&sender, CHAIN_ID, to, U256::from(100u64), 0, 21_000);
+
+        Self {
+            from,
+            to,
+            alloc: vec![(from, U256::from(1_000_000u64)), (to, U256::ZERO)],
+            tx,
+            expected_from: U256::from(1_000_000u64 - 100),
+            expected_to: U256::from(100u64),
+        }
+    }
+}
 
 pub(crate) fn simulate(cfg: SimConfig) -> anyhow::Result<SimOutcome> {
     FileLimitHandler::new().raise();
-    // Tokio runtime required for WrapDatabaseAsync in the QMDB adapter.
     let executor = tokio::Runner::default();
     executor.start(|context| async move { run_sim(context, cfg).await })
 }
@@ -42,22 +59,18 @@ async fn run_sim(context: tokio::Context, cfg: SimConfig) -> anyhow::Result<SimO
     let (participants_vec, schemes) = threshold_schemes(cfg.seed, cfg.nodes)?;
     let participants_set = participants_set(&participants_vec)?;
 
-    let sim_control = start_network(&context, participants_set).await;
+    let mut sim_control = start_network(&context, participants_set).await;
+    sim_control
+        .connect_all(&participants_vec, SimLinkConfig::default())
+        .await
+        .context("connect_all")?;
     let sim_control = Arc::new(Mutex::new(sim_control));
 
-    connect_all_peers(&sim_control, &participants_vec).await?;
-
-    let demo = crate::demo::DemoTransfer::new();
+    let demo = DemoTransfer::new();
     let bootstrap = BootstrapConfig::new(demo.alloc.clone(), vec![demo.tx.clone()]);
 
-    let (nodes, mut finalized_rx) = start_all_nodes(
-        &context,
-        &sim_control,
-        &participants_vec,
-        &schemes,
-        &bootstrap,
-    )
-    .await?;
+    let (nodes, mut finalized_rx) =
+        start_all_nodes(&context, &sim_control, &participants_vec, &schemes, &bootstrap).await?;
 
     let head = wait_for_finalized_head(&mut finalized_rx, cfg.nodes, cfg.blocks).await?;
     let (state_root, seed) = assert_all_nodes_converged(&nodes, head, &demo).await?;
@@ -96,11 +109,8 @@ async fn start_all_nodes(
             manager: manager.clone(),
         };
 
-        let transport_provider =
-            SimTransportProvider::new(Arc::clone(sim_control), pk.clone());
-
+        let transport_provider = SimTransportProvider::new(Arc::clone(sim_control), pk.clone());
         let node_config = NodeConfig::default();
-
         let service = KoraNodeService::new(runner, transport_provider, node_config);
         let handle = service
             .run_with_context(context.clone())
@@ -139,33 +149,6 @@ async fn start_network(
     let control = SimControl::new(oracle);
     control.manager().update(0, participants).await;
     control
-}
-
-async fn connect_all_peers(
-    sim_control: &Arc<Mutex<SimControl<ed25519::PublicKey>>>,
-    peers: &[ed25519::PublicKey],
-) -> anyhow::Result<()> {
-    let mut control = sim_control.lock().map_err(|_| anyhow::anyhow!("lock poisoned"))?;
-    for a in peers.iter() {
-        for b in peers.iter() {
-            if a == b {
-                continue;
-            }
-            control
-                .add_link(
-                    a.clone(),
-                    b.clone(),
-                    simulated::Link {
-                        latency: Duration::from_millis(P2P_LINK_LATENCY_MS),
-                        jitter: Duration::from_millis(0),
-                        success_rate: 1.0,
-                    },
-                )
-                .await
-                .context("add_link")?;
-        }
-    }
-    Ok(())
 }
 
 async fn wait_for_finalized_head(
@@ -209,7 +192,7 @@ async fn wait_for_finalized_head(
 async fn assert_all_nodes_converged(
     nodes: &[NodeHandle],
     head: ConsensusDigest,
-    demo: &crate::demo::DemoTransfer,
+    demo: &DemoTransfer,
 ) -> anyhow::Result<(StateRoot, B256)> {
     let mut state_root = None;
     let mut seed = None;
@@ -252,13 +235,10 @@ async fn assert_all_nodes_converged(
 
 #[cfg(test)]
 mod tests {
-    use alloy_evm::revm::primitives::U256;
-
     use super::*;
 
     #[test]
     fn test_sim_smoke() {
-        // Tokio runtime required for WrapDatabaseAsync in the QMDB adapter.
         let outcome = simulate(SimConfig { nodes: 4, blocks: 3, seed: 42 }).unwrap();
         assert_eq!(outcome.from_balance, U256::from(1_000_000u64 - 100));
         assert_eq!(outcome.to_balance, U256::from(100u64));

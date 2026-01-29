@@ -36,7 +36,7 @@ where
     T: TransportProvider,
 {
     /// Create a new generic node service.
-    pub fn new(runner: R, transport_provider: T, config: NodeConfig) -> Self {
+    pub const fn new(runner: R, transport_provider: T, config: NodeConfig) -> Self {
         Self { runner, transport_provider, config }
     }
 

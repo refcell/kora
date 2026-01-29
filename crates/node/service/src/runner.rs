@@ -24,12 +24,12 @@ pub struct NodeRunContext<T> {
 
 impl<T> NodeRunContext<T> {
     /// Create a new run context.
-    pub fn new(context: tokio::Context, config: Arc<NodeConfig>, transport: T) -> Self {
+    pub const fn new(context: tokio::Context, config: Arc<NodeConfig>, transport: T) -> Self {
         Self { context, config, transport }
     }
 
     /// Get a reference to the runtime context.
-    pub fn context(&self) -> &tokio::Context {
+    pub const fn context(&self) -> &tokio::Context {
         &self.context
     }
 
@@ -39,17 +39,17 @@ impl<T> NodeRunContext<T> {
     }
 
     /// Get the node configuration.
-    pub fn config(&self) -> &Arc<NodeConfig> {
+    pub const fn config(&self) -> &Arc<NodeConfig> {
         &self.config
     }
 
     /// Get a reference to the transport.
-    pub fn transport(&self) -> &T {
+    pub const fn transport(&self) -> &T {
         &self.transport
     }
 
     /// Get a mutable reference to the transport.
-    pub fn transport_mut(&mut self) -> &mut T {
+    pub const fn transport_mut(&mut self) -> &mut T {
         &mut self.transport
     }
 

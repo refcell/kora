@@ -34,7 +34,7 @@ clippy:
 
 # Run cargo deny
 deny:
-    scripts/ensure-cargo-deny.sh
+    .github/ensure-cargo-deny.sh
     cargo deny check
 
 # Clean build artifacts

@@ -44,7 +44,6 @@ pub type DkgReceiver = discovery::Receiver<ed25519::PublicKey>;
 ///
 /// Wraps the commonware-p2p authenticated discovery network with a single
 /// channel dedicated to DKG ceremony messages.
-#[allow(missing_debug_implementations)]
 pub struct DkgTransport<E: Clock> {
     /// Oracle for peer management.
     pub oracle: discovery::Oracle<ed25519::PublicKey>,
@@ -59,9 +58,14 @@ pub struct DkgTransport<E: Clock> {
     pub receiver: DkgReceiver,
 }
 
+impl<E: Clock> std::fmt::Debug for DkgTransport<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DkgTransport").finish_non_exhaustive()
+    }
+}
+
 /// Configuration for building a DKG transport.
 #[derive(Clone)]
-#[allow(missing_debug_implementations)]
 pub struct DkgTransportConfig {
     /// Inner discovery config.
     inner: discovery::Config<ed25519::PrivateKey>,
@@ -71,6 +75,15 @@ pub struct DkgTransportConfig {
 
     /// Rate quota for the DKG channel.
     quota: Quota,
+}
+
+impl std::fmt::Debug for DkgTransportConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DkgTransportConfig")
+            .field("backlog", &self.backlog)
+            .field("quota", &self.quota)
+            .finish_non_exhaustive()
+    }
 }
 
 impl DkgTransportConfig {

@@ -24,6 +24,7 @@ const MAX_BACKOFF_MS: u64 = 5000;
 const PROGRESS_LOG_INTERVAL_SECS: u64 = 5;
 
 /// DKG ceremony runner.
+#[derive(Debug)]
 pub struct DkgCeremony {
     config: DkgConfig,
     force_restart: bool,

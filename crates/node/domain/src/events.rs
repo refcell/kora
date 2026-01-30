@@ -12,13 +12,10 @@ use crate::ConsensusDigest;
 /// Ledger-related domain events emitted by the example chain.
 #[derive(Clone, Debug)]
 pub enum LedgerEvent {
-    #[allow(dead_code)]
     /// A transaction has been submitted to the ledger.
     TransactionSubmitted(TxId),
-    #[allow(dead_code)]
     /// A snapshot has been persisted to durable storage.
     SnapshotPersisted(ConsensusDigest),
-    #[allow(dead_code)]
     /// The randomness seed has been updated for future blocks.
     SeedUpdated(ConsensusDigest, B256),
 }

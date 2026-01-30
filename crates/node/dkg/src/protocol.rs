@@ -93,26 +93,48 @@ use crate::{DkgConfig, DkgError, DkgOutput, DkgPhase, PersistedDkgState};
 
 /// Inner message types for the DKG protocol (without session binding).
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub enum ProtocolMessageKind {
     /// Public commitment from a dealer to all players.
-    DealerPublic { dealer: ed25519::PublicKey, msg: DealerPubMsg<MinSig> },
+    DealerPublic {
+        /// The dealer's public key.
+        dealer: ed25519::PublicKey,
+        /// The public commitment message.
+        msg: DealerPubMsg<MinSig>,
+    },
     /// Private share from a dealer to a specific player.
-    DealerPrivate { dealer: ed25519::PublicKey, msg: DealerPrivMsg },
+    DealerPrivate {
+        /// The dealer's public key.
+        dealer: ed25519::PublicKey,
+        /// The private share message.
+        msg: DealerPrivMsg,
+    },
     /// Acknowledgement from a player to a dealer.
     PlayerAck {
+        /// The player's public key.
         player: ed25519::PublicKey,
+        /// The dealer's public key.
         dealer: ed25519::PublicKey,
+        /// The acknowledgement.
         ack: PlayerAck<ed25519::PublicKey>,
     },
     /// Signed dealer log for finalization.
-    DealerLog { log: SignedDealerLog<MinSig, ed25519::PrivateKey> },
+    DealerLog {
+        /// The signed dealer log.
+        log: SignedDealerLog<MinSig, ed25519::PrivateKey>,
+    },
     /// Request for all dealer logs (sent by non-leaders to leader).
-    /// Deprecated: Use session-bound messages instead.
     RequestLogs,
     /// All collected dealer logs (sent by leader to all).
-    AllLogs { logs: Vec<(ed25519::PublicKey, SignedDealerLog<MinSig, ed25519::PrivateKey>)> },
+    AllLogs {
+        /// The collected dealer logs.
+        logs: Vec<(ed25519::PublicKey, SignedDealerLog<MinSig, ed25519::PrivateKey>)>,
+    },
     /// Ready signal indicating a node has sent all acks and is waiting to finalize.
-    Ready { player: ed25519::PublicKey },
+    Ready {
+        /// The player's public key.
+        player: ed25519::PublicKey,
+    },
 }
 
 /// Message envelope that wraps protocol messages with session binding.
@@ -271,6 +293,7 @@ impl ProtocolMessage {
 
 /// State of a participant in the DKG protocol.
 pub struct DkgParticipant {
+    // Note: Manual Debug impl below due to complex inner types.
     config: DkgConfig,
     info: Info<MinSig, ed25519::PublicKey>,
     player: Option<Player<MinSig, ed25519::PrivateKey>>,
@@ -314,6 +337,17 @@ pub struct DkgParticipant {
 
     /// Timestamp used for this ceremony session.
     timestamp_nanos: u64,
+}
+
+impl std::fmt::Debug for DkgParticipant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DkgParticipant")
+            .field("validator_index", &self.config.validator_index)
+            .field("phase", &self.current_phase)
+            .field("finalized", &self.finalized)
+            .field("dealer_logs_count", &self.dealer_logs.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl DkgParticipant {

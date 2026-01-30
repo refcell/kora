@@ -4,14 +4,22 @@ use serde::{Deserialize, Serialize};
 
 use crate::DkgError;
 
+/// Output of a successful DKG ceremony containing the group key, shares, and participant info.
 #[derive(Debug, Clone)]
 pub struct DkgOutput {
+    /// The aggregated group public key derived from all participants' contributions.
     pub group_public_key: Vec<u8>,
+    /// Coefficients of the public polynomial used for share verification.
     pub public_polynomial: Vec<u8>,
+    /// Minimum number of participants required to reconstruct the secret.
     pub threshold: u32,
+    /// Total number of participants in the DKG ceremony.
     pub participants: usize,
+    /// This participant's index in the DKG ceremony (1-indexed).
     pub share_index: u32,
+    /// This participant's secret share of the distributed key.
     pub share_secret: Vec<u8>,
+    /// Public keys of all participants in the DKG ceremony.
     pub participant_keys: Vec<Vec<u8>>,
 }
 
@@ -32,6 +40,7 @@ struct ShareJson {
 }
 
 impl DkgOutput {
+    /// Persists the DKG output to `output.json` and the secret share to `share.key` in `data_dir`.
     pub fn save(&self, data_dir: &Path) -> Result<(), DkgError> {
         let output_json = OutputJson {
             group_public_key: hex::encode(&self.group_public_key),
@@ -53,6 +62,7 @@ impl DkgOutput {
         Ok(())
     }
 
+    /// Loads a DKG output from `output.json` and `share.key` in `data_dir`.
     pub fn load(data_dir: &Path) -> Result<Self, DkgError> {
         let output_path = data_dir.join("output.json");
         let output_str = std::fs::read_to_string(&output_path)?;
@@ -84,6 +94,7 @@ impl DkgOutput {
         })
     }
 
+    /// Returns `true` if both `output.json` and `share.key` exist in `data_dir`.
     pub fn exists(data_dir: &Path) -> bool {
         data_dir.join("output.json").exists() && data_dir.join("share.key").exists()
     }

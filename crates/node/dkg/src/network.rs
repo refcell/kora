@@ -7,7 +7,6 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     net::{TcpListener, TcpStream, ToSocketAddrs},
-    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -25,11 +24,11 @@ pub(crate) struct Envelope {
 }
 
 /// Network handle for sending and receiving DKG messages.
+#[derive(Debug)]
 pub struct DkgNetwork {
     config: DkgConfig,
     listener: TcpListener,
     peer_addrs: HashMap<ed25519::PublicKey, String>,
-    incoming: Arc<Mutex<Vec<Envelope>>>,
 }
 
 impl DkgNetwork {
@@ -54,7 +53,7 @@ impl DkgNetwork {
             "DKG network initialized"
         );
 
-        Ok(Self { config, listener, peer_addrs, incoming: Arc::new(Mutex::new(Vec::new())) })
+        Ok(Self { config, listener, peer_addrs })
     }
 
     /// Send a message to a specific peer.

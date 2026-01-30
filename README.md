@@ -30,13 +30,11 @@
 
 ## What's Kora?
 
-Kora is a minimal, high-performance execution client built entirely in Rust. It combines commonware's BLS12-381 threshold consensus with REVM for EVM execution and QMDB for efficient state storage.
+Kora is a minimal, high-performance execution client built entirely in Rust. It combines commonware's BLS12-381 threshold consensus with REVM for EVM execution and QMDB for efficient state storage. The architecture is modular with distinct layers for consensus (BLS12-381 threshold signatures via commonware simplex), execution (EVM state transitions powered by REVM), storage (high-performance state management with QMDB), and networking (P2P transport and message marshaling).
 
-The architecture is modular with distinct layers:
-- **Consensus** - BLS12-381 threshold signatures via commonware simplex
-- **Execution** - EVM state transitions powered by REVM
-- **Storage** - High-performance state management with QMDB
-- **Network** - P2P transport and message marshaling
+## Why?
+
+Existing options for building EVM-compatible nodes on commonware are limited. The [tempo node](https://github.com/commonwarexyz/monorepo/tree/main/examples/tempo) uses reth, which is heavy and comes with opinionated Ethereum traits and abstractions that may not suit all use cases. The [revm commonware example](https://github.com/commonwarexyz/monorepo/pull/2495) is limited to a mock simulation without real networking or persistence. There isn't a public, lightweight node available that connects revm directly to commonware with full consensus and storage. Kora fills this gap by providing a minimal, production-oriented node that integrates revm with commonware simplex consensus and QMDB storage.
 
 ## Usage
 
@@ -49,66 +47,11 @@ just devnet
 > [!TIP]
 > See the [Justfile](./Justfile) for other useful commands.
 
-### Devnet Commands
-
-| Command | Description |
-|---------|-------------|
-| `just devnet` | Start the devnet with interactive DKG |
-| `just devnet-down` | Stop the devnet |
-| `just devnet-reset` | Reset devnet (clears all state, requires fresh DKG) |
-| `just devnet-logs` | View devnet logs |
-| `just devnet-status` | View devnet status |
-| `just devnet-stats` | Live devnet monitoring dashboard |
-
 ## Architecture
 
-The devnet runs in three phases:
+The devnet runs in three phases. Phase 0 generates ed25519 identity keys for each validator node. Phase 1 is the DKG ceremony, an interactive threshold key generation process using Ed25519 simplex consensus where validators collaborate to generate a shared BLS12-381 threshold key. Phase 2 launches full validator nodes running BLS12-381 threshold consensus, the REVM execution engine, and QMDB state storage.
 
-### Phase 0: Init Config
-Generates ed25519 identity keys for each validator node.
-
-### Phase 1: DKG Ceremony
-Interactive threshold key generation using Ed25519 simplex consensus. Validators collaborate to generate a shared BLS12-381 threshold key.
-
-### Phase 2: Validators
-Full validator nodes running:
-- BLS12-381 threshold consensus
-- REVM execution engine
-- QMDB state storage
-
-### Observability
-Prometheus metrics with Grafana dashboards for monitoring.
-
-### Crate Structure
-
-```
-bin/
-├── kora          # Main validator binary
-└── keygen        # Key generation for devnet
-
-crates/
-├── node/         # Node components
-│   ├── consensus # BLS threshold consensus
-│   ├── executor  # REVM execution
-│   ├── ledger    # Block/transaction ledger
-│   ├── txpool    # Transaction pool
-│   ├── service   # Node service orchestration
-│   ├── dkg       # Distributed key generation
-│   └── ...
-├── storage/      # Storage layer
-│   ├── qmdb      # QMDB integration
-│   ├── backend   # Storage backend
-│   ├── handlers  # State handlers
-│   ├── overlay   # State overlay
-│   └── ...
-├── network/      # Network layer
-│   ├── transport # P2P transport
-│   └── marshal   # Message serialization
-└── utilities/    # Utilities
-    ├── cli       # CLI helpers
-    ├── crypto    # Cryptographic utilities
-    └── sys       # System utilities
-```
+Observability is provided through Prometheus metrics with Grafana dashboards for monitoring node health, consensus performance, and execution metrics.
 
 ## Contributing
 

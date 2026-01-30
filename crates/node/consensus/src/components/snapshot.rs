@@ -2,8 +2,10 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
+
+use parking_lot::RwLock;
 
 use kora_qmdb::ChangeSet;
 use kora_traits::StateDb;
@@ -45,14 +47,14 @@ impl<S> InMemorySnapshotStore<S> {
 impl<S> InMemorySnapshotStore<S> {
     /// Returns true if every digest in the chain is neither persisted nor in-flight.
     pub fn can_persist_chain(&self, chain: &[Digest]) -> bool {
-        let persisted = self.persisted.read().unwrap();
-        let persisting = self.persisting.read().unwrap();
+        let persisted = self.persisted.read();
+        let persisting = self.persisting.read();
         chain.iter().all(|digest| !persisted.contains(digest) && !persisting.contains(digest))
     }
 
     /// Mark a chain as being persisted.
     pub fn mark_persisting_chain(&self, chain: &[Digest]) {
-        let mut persisting = self.persisting.write().unwrap();
+        let mut persisting = self.persisting.write();
         for digest in chain {
             persisting.insert(*digest);
         }
@@ -60,7 +62,7 @@ impl<S> InMemorySnapshotStore<S> {
 
     /// Clear the in-flight markers for a chain.
     pub fn clear_persisting_chain(&self, chain: &[Digest]) {
-        let mut persisting = self.persisting.write().unwrap();
+        let mut persisting = self.persisting.write();
         for digest in chain {
             persisting.remove(digest);
         }
@@ -75,19 +77,19 @@ impl<S> Default for InMemorySnapshotStore<S> {
 
 impl<S: StateDb> SnapshotStore<S> for InMemorySnapshotStore<S> {
     fn get(&self, digest: &Digest) -> Option<Snapshot<S>> {
-        self.snapshots.read().unwrap().get(digest).cloned()
+        self.snapshots.read().get(digest).cloned()
     }
 
     fn insert(&self, digest: Digest, snapshot: Snapshot<S>) {
-        self.snapshots.write().unwrap().insert(digest, snapshot);
+        self.snapshots.write().insert(digest, snapshot);
     }
 
     fn is_persisted(&self, digest: &Digest) -> bool {
-        self.persisted.read().unwrap().contains(digest)
+        self.persisted.read().contains(digest)
     }
 
     fn mark_persisted(&self, digests: &[Digest]) {
-        let mut persisted = self.persisted.write().unwrap();
+        let mut persisted = self.persisted.write();
         for digest in digests {
             persisted.insert(*digest);
         }
@@ -98,8 +100,8 @@ impl<S: StateDb> SnapshotStore<S> for InMemorySnapshotStore<S> {
         parent: Digest,
         new_changes: ChangeSet,
     ) -> Result<ChangeSet, ConsensusError> {
-        let snapshots = self.snapshots.read().unwrap();
-        let persisted = self.persisted.read().unwrap();
+        let snapshots = self.snapshots.read();
+        let persisted = self.persisted.read();
 
         // Walk back to find all unpersisted ancestors
         let mut chain = Vec::new();
@@ -131,8 +133,8 @@ impl<S: StateDb> SnapshotStore<S> for InMemorySnapshotStore<S> {
         &self,
         digest: Digest,
     ) -> Result<(Vec<Digest>, ChangeSet), ConsensusError> {
-        let snapshots = self.snapshots.read().unwrap();
-        let persisted = self.persisted.read().unwrap();
+        let snapshots = self.snapshots.read();
+        let persisted = self.persisted.read();
 
         let mut chain = Vec::new();
         let mut changes_chain = Vec::new();

@@ -1,9 +1,8 @@
 //! In-memory seed tracker implementation.
 
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, RwLock},
-};
+use std::{collections::BTreeMap, sync::Arc};
+
+use parking_lot::RwLock;
 
 use alloy_primitives::B256;
 
@@ -37,11 +36,11 @@ impl Default for InMemorySeedTracker {
 
 impl SeedTracker for InMemorySeedTracker {
     fn get(&self, digest: &Digest) -> Option<B256> {
-        self.inner.read().unwrap().get(digest).copied()
+        self.inner.read().get(digest).copied()
     }
 
     fn insert(&self, digest: Digest, seed: B256) {
-        self.inner.write().unwrap().insert(digest, seed);
+        self.inner.write().insert(digest, seed);
     }
 }
 

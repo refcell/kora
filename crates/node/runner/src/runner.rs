@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use alloy_consensus::Header;
-use alloy_primitives::Address;
+use alloy_primitives::{Address, B256};
 use anyhow::Context as _;
 use commonware_consensus::{
     Reporters,
@@ -82,7 +82,7 @@ impl BlockContextProvider for RevmContextProvider {
             base_fee_per_gas: Some(0),
             ..Default::default()
         };
-        BlockContext::new(header, block.prevrandao)
+        BlockContext::new(header, B256::ZERO, block.prevrandao)
     }
 }
 
@@ -271,12 +271,15 @@ impl NodeRunner for ProductionRunner {
 
         let epocher = FixedEpocher::new(NZU64!(EPOCH_LENGTH));
         let executor = RevmExecutor::new(self.chain_id);
-        let app = RevmApplication::<ThresholdScheme, _>::new(
+        let mut app = RevmApplication::<ThresholdScheme, _>::new(
             ledger.clone(),
             executor,
             block_cfg.max_txs,
             self.gas_limit,
         );
+        if let Some((state, _)) = &self.rpc_config {
+            app = app.with_node_state(state.clone());
+        }
         let marshaled =
             Marshaled::new(context.with_label("marshaled"), app, marshal_mailbox.clone(), epocher);
 

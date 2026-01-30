@@ -22,7 +22,7 @@ fn block_context(height: u64, prevrandao: B256) -> BlockContext {
         base_fee_per_gas: Some(0),
         ..Default::default()
     };
-    BlockContext::new(header, prevrandao)
+    BlockContext::new(header, B256::ZERO, prevrandao)
 }
 
 /// Builder for constructing block proposals.

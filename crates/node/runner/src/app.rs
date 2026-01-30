@@ -17,6 +17,7 @@ use kora_executor::{BlockContext, BlockExecutor};
 use kora_ledger::LedgerService;
 use kora_overlay::OverlayState;
 use kora_qmdb_ledger::QmdbState;
+use kora_rpc::NodeState;
 use rand::Rng;
 use tracing::{info, trace, warn};
 
@@ -27,6 +28,7 @@ pub struct RevmApplication<S, E> {
     executor: E,
     max_txs: usize,
     gas_limit: u64,
+    node_state: Option<NodeState>,
     _scheme: std::marker::PhantomData<S>,
 }
 
@@ -45,7 +47,14 @@ where
 {
     /// Create a new REVM application.
     pub const fn new(ledger: LedgerService, executor: E, max_txs: usize, gas_limit: u64) -> Self {
-        Self { ledger, executor, max_txs, gas_limit, _scheme: std::marker::PhantomData }
+        Self { ledger, executor, max_txs, gas_limit, node_state: None, _scheme: std::marker::PhantomData }
+    }
+
+    /// Set the node state for tracking proposal metrics.
+    #[must_use]
+    pub fn with_node_state(mut self, state: NodeState) -> Self {
+        self.node_state = Some(state);
+        self
     }
 
     fn block_context(&self, height: u64, prevrandao: B256) -> BlockContext {
@@ -57,7 +66,7 @@ where
             base_fee_per_gas: Some(0),
             ..Default::default()
         };
-        BlockContext::new(header, prevrandao)
+        BlockContext::new(header, B256::ZERO, prevrandao)
     }
 
     async fn get_prevrandao(&self, parent_digest: ConsensusDigest) -> B256 {
@@ -248,6 +257,7 @@ where
         _context: (Env, Self::Context),
         mut ancestry: AncestorStream<Self::SigningScheme, Self::Block>,
     ) -> impl std::future::Future<Output = Option<Self::Block>> + Send {
+        let node_state = self.node_state.clone();
         async move {
             let start = Instant::now();
             let parent = ancestry.next().await?;
@@ -258,6 +268,9 @@ where
             let build_elapsed = build_start.elapsed();
 
             if let Some(ref b) = block {
+                if let Some(ref state) = node_state {
+                    state.inc_proposed();
+                }
                 info!(
                     height = b.height,
                     ancestry_ms = ancestry_elapsed.as_millis(),

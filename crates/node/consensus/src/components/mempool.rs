@@ -1,9 +1,8 @@
 //! In-memory mempool implementation.
 
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, RwLock},
-};
+use std::{collections::BTreeMap, sync::Arc};
+
+use parking_lot::RwLock;
 
 use kora_domain::Tx;
 
@@ -31,12 +30,12 @@ impl Default for InMemoryMempool {
 impl Mempool for InMemoryMempool {
     fn insert(&self, tx: Tx) -> bool {
         let id = tx.id();
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write();
         inner.insert(id, tx).is_none()
     }
 
     fn build(&self, max_txs: usize, excluded: &std::collections::BTreeSet<TxId>) -> Vec<Tx> {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read();
         inner
             .iter()
             .filter(|(id, _)| !excluded.contains(id))
@@ -46,14 +45,14 @@ impl Mempool for InMemoryMempool {
     }
 
     fn prune(&self, tx_ids: &[TxId]) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write();
         for id in tx_ids {
             inner.remove(id);
         }
     }
 
     fn len(&self) -> usize {
-        self.inner.read().unwrap().len()
+        self.inner.read().len()
     }
 }
 

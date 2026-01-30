@@ -21,6 +21,9 @@ alloy-consensus.workspace = true
 # Commonware
 commonware-cryptography.workspace = true
 
+# Synchronization
+parking_lot.workspace = true
+
 # Error handling
 thiserror.workspace = true
 

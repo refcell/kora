@@ -35,9 +35,12 @@ format_uptime() {
 fetch_all_statuses() {
     local tmpdir=$(mktemp -d)
     
-    # Launch parallel fetches
+    # Launch parallel fetches using JSON-RPC POST to get block number (indicates node is alive)
     for i in 0 1 2 3; do
-        (curl -s --max-time 0.2 "http://localhost:${RPC_PORTS[$i]}/status" 2>/dev/null > "$tmpdir/$i" || echo "{}" > "$tmpdir/$i") &
+        (curl -s --max-time 0.2 -X POST -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"kora_nodeStatus","params":[],"id":1}' \
+            "http://localhost:${RPC_PORTS[$i]}" 2>/dev/null | \
+            jq -c '.result // {}' > "$tmpdir/$i" 2>/dev/null || echo "{}" > "$tmpdir/$i") &
     done
     wait
     
@@ -76,7 +79,10 @@ render() {
     
     local i=0
     while IFS= read -r status; do
-        if [[ -n "$status" && "$status" != "{}" ]]; then
+        # Skip empty lines (separators between node outputs)
+        [[ -z "$status" ]] && continue
+        
+        if [[ "$status" != "{}" ]]; then
             # Parse with single jq call
             local parsed
             parsed=$(echo "$status" | jq -r '[.uptime_secs // 0, .current_view // 0, .finalized_count // 0, .nullified_count // 0, .proposed_count // 0, .is_leader // false] | @tsv' 2>/dev/null)

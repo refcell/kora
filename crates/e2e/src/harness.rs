@@ -238,7 +238,7 @@ impl BlockContextProvider for TestContextProvider {
             base_fee_per_gas: Some(0),
             ..Default::default()
         };
-        BlockContext::new(header, block.prevrandao)
+        BlockContext::new(header, B256::ZERO, block.prevrandao)
     }
 }
 
@@ -694,7 +694,7 @@ impl<S> TestApplication<S> {
             base_fee_per_gas: Some(0),
             ..Default::default()
         };
-        BlockContext::new(header, prevrandao)
+        BlockContext::new(header, B256::ZERO, prevrandao)
     }
 
     async fn get_prevrandao(&self, parent_digest: ConsensusDigest) -> B256 {

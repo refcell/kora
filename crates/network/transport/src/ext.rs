@@ -97,9 +97,14 @@ fn parse_network_config(
         .parse()
         .map_err(|_| TransportError::InvalidListenAddr(config.listen_addr.clone()))?;
 
-    // For now, use listen_addr as dialable address
-    // TODO: Add dialable_addr field to NetworkConfig for NAT traversal
-    let dialable = Ingress::Socket(listen_addr);
+    let dialable = if let Some(ref dialable_addr) = config.dialable_addr {
+        let addr: SocketAddr = dialable_addr
+            .parse()
+            .map_err(|_| TransportError::InvalidListenAddr(dialable_addr.clone()))?;
+        Ingress::Socket(addr)
+    } else {
+        Ingress::Socket(listen_addr)
+    };
 
     let bootstrappers = TransportParsing::parse_bootstrappers(&config.bootstrap_peers)?;
 

@@ -1,7 +1,7 @@
 use std::{fmt, sync::Arc, time::Duration};
 
 use alloy_consensus::Header;
-use alloy_primitives::Address;
+use alloy_primitives::{Address, B256};
 use anyhow::Context as _;
 use commonware_consensus::{
     Reporter, Reporters,
@@ -228,7 +228,7 @@ impl BlockContextProvider for RevmContextProvider {
             base_fee_per_gas: Some(0),
             ..Default::default()
         };
-        BlockContext::new(header, block.prevrandao)
+        BlockContext::new(header, B256::ZERO, block.prevrandao)
     }
 }
 

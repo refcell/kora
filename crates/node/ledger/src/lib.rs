@@ -488,7 +488,7 @@ mod tests {
             base_fee_per_gas: Some(0),
             ..Default::default()
         };
-        BlockContext::new(header, prevrandao)
+        BlockContext::new(header, B256::ZERO, prevrandao)
     }
 
     async fn setup_ledger(

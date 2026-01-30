@@ -1,0 +1,19 @@
+[package]
+name = "kora-indexer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Block and transaction indexer for Kora RPC queries"
+
+[lints]
+workspace = true
+
+[dependencies]
+alloy-primitives.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]

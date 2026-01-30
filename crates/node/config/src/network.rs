@@ -12,6 +12,11 @@ pub struct NetworkConfig {
     #[serde(default = "default_listen_addr")]
     pub listen_addr: String,
 
+    /// External address for NAT traversal (if different from listen_addr).
+    /// Use this when behind NAT/firewall to specify the publicly reachable address.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dialable_addr: Option<String>,
+
     /// Bootstrap peers to connect to on startup.
     #[serde(default)]
     pub bootstrap_peers: Vec<String>,
@@ -19,7 +24,11 @@ pub struct NetworkConfig {
 
 impl Default for NetworkConfig {
     fn default() -> Self {
-        Self { listen_addr: DEFAULT_LISTEN_ADDR.to_string(), bootstrap_peers: Vec::new() }
+        Self {
+            listen_addr: DEFAULT_LISTEN_ADDR.to_string(),
+            dialable_addr: None,
+            bootstrap_peers: Vec::new(),
+        }
     }
 }
 

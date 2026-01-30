@@ -104,7 +104,10 @@ impl LegacyNodeService {
 
         let validators = self.config.consensus.build_validator_set()?;
         if !validators.is_empty() {
-            transport.oracle.update(0, validators.try_into().expect("valid set")).await;
+            let validator_set = validators
+                .try_into()
+                .map_err(|_| eyre::eyre!("failed to convert validator set"))?;
+            transport.oracle.update(0, validator_set).await;
             tracing::info!("registered validators with oracle");
         }
 

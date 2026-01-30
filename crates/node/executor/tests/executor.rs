@@ -168,7 +168,7 @@ fn test_revm_executor_chain_ids(#[case] chain_id: u64, #[case] _name: &str) {
 #[test]
 fn test_revm_executor_default_chain_id() {
     let executor = RevmExecutor::default();
-    assert_eq!(executor.chain_id(), 0);
+    assert_eq!(executor.chain_id(), 1);
 }
 
 // ----------------------------------------------------------------------------
@@ -179,7 +179,7 @@ fn test_revm_executor_default_chain_id() {
 fn test_execute_empty_transactions_returns_empty_outcome() {
     let executor = RevmExecutor::new(1);
     let state = MockStateDb::new();
-    let context = BlockContext::new(Header::default(), B256::ZERO);
+    let context = BlockContext::new(Header::default(), B256::ZERO, B256::ZERO);
     let txs: Vec<Bytes> = vec![];
 
     let outcome = executor.execute(&state, &context, &txs).expect("execution should succeed");
@@ -196,7 +196,7 @@ fn test_execute_empty_transactions_returns_empty_outcome() {
 fn test_execute_empty_transactions_different_chains(#[case] chain_id: u64) {
     let executor = RevmExecutor::new(chain_id);
     let state = MockStateDb::new();
-    let context = BlockContext::new(Header::default(), B256::ZERO);
+    let context = BlockContext::new(Header::default(), B256::ZERO, B256::ZERO);
     let txs: Vec<Bytes> = vec![];
 
     let outcome = executor.execute(&state, &context, &txs).expect("execution should succeed");
@@ -211,23 +211,33 @@ fn test_execute_empty_transactions_different_chains(#[case] chain_id: u64) {
 // ----------------------------------------------------------------------------
 
 #[test]
-fn test_validate_header_succeeds_with_default_header() {
+fn test_validate_header_succeeds_with_valid_gas_limit() {
     let executor = RevmExecutor::new(1);
-    let header = Header::default();
+    let header = Header { gas_limit: 30_000_000, ..Default::default() };
 
     let result = <RevmExecutor as BlockExecutor<MockStateDb>>::validate_header(&executor, &header);
 
     assert!(result.is_ok());
 }
 
-#[rstest]
-#[case(0)]
-#[case(1)]
-#[case(1_000_000)]
-#[case(u64::MAX)]
-fn test_validate_header_succeeds_with_various_block_numbers(#[case] number: u64) {
+#[test]
+fn test_validate_header_fails_with_gas_limit_below_minimum() {
     let executor = RevmExecutor::new(1);
-    let header = Header { number, ..Default::default() };
+    let header = Header { gas_limit: 1000, ..Default::default() };
+
+    let result = <RevmExecutor as BlockExecutor<MockStateDb>>::validate_header(&executor, &header);
+
+    assert!(result.is_err());
+}
+
+#[rstest]
+#[case(0, 30_000_000)]
+#[case(1, 30_000_000)]
+#[case(1_000_000, 30_000_000)]
+#[case(u64::MAX, 30_000_000)]
+fn test_validate_header_succeeds_with_various_block_numbers(#[case] number: u64, #[case] gas_limit: u64) {
+    let executor = RevmExecutor::new(1);
+    let header = Header { number, gas_limit, ..Default::default() };
 
     let result = <RevmExecutor as BlockExecutor<MockStateDb>>::validate_header(&executor, &header);
 
@@ -241,11 +251,13 @@ fn test_validate_header_succeeds_with_various_block_numbers(#[case] number: u64)
 #[test]
 fn test_block_context_creation_with_defaults() {
     let header = Header::default();
+    let parent_hash = B256::repeat_byte(1);
     let prevrandao = B256::ZERO;
 
-    let context = BlockContext::new(header.clone(), prevrandao);
+    let context = BlockContext::new(header.clone(), parent_hash, prevrandao);
 
     assert_eq!(context.prevrandao, B256::ZERO);
+    assert_eq!(context.parent_hash, parent_hash);
     assert_eq!(context.header.number, header.number);
 }
 
@@ -254,7 +266,7 @@ fn test_block_context_creation_with_custom_prevrandao() {
     let header = Header::default();
     let prevrandao = B256::from([0xAB; 32]);
 
-    let context = BlockContext::new(header, prevrandao);
+    let context = BlockContext::new(header, B256::ZERO, prevrandao);
 
     assert_eq!(context.prevrandao, B256::from([0xAB; 32]));
 }
@@ -268,7 +280,7 @@ fn test_block_context_with_various_header_values(#[case] number: u64, #[case] ga
     let header = Header { number, gas_limit, ..Default::default() };
     let prevrandao = B256::from([number as u8; 32]);
 
-    let context = BlockContext::new(header, prevrandao);
+    let context = BlockContext::new(header, B256::ZERO, prevrandao);
 
     assert_eq!(context.header.number, number);
     assert_eq!(context.header.gas_limit, gas_limit);
@@ -560,7 +572,7 @@ fn test_execute_with_populated_state() {
         MockAccount { nonce: 0, balance: U256::from(500), ..Default::default() },
     );
 
-    let context = BlockContext::new(Header::default(), B256::ZERO);
+    let context = BlockContext::new(Header::default(), B256::ZERO, B256::ZERO);
     let txs: Vec<Bytes> = vec![];
 
     let outcome = executor.execute(&state, &context, &txs).expect("execution should succeed");

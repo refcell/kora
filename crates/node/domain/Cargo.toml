@@ -24,6 +24,9 @@ alloy-rlp = { workspace = true, optional = true }
 k256 = { workspace = true, optional = true }
 sha3 = { workspace = true, optional = true }
 
+# Synchronization
+parking_lot.workspace = true
+
 # General
 bytes.workspace = true
 futures.workspace = true

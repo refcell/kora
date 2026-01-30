@@ -27,6 +27,7 @@ futures.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
 rand.workspace = true
+rand_core.workspace = true
 bytes.workspace = true
 hex.workspace = true
 

@@ -31,4 +31,25 @@ pub enum DkgError {
 
     #[error("Invalid dealer log from {dealer}")]
     InvalidDealerLog { dealer: String },
+
+    #[error("Unknown sender: {sender}")]
+    UnknownSender { sender: String },
+
+    #[error("Sender mismatch: expected {expected}, got {actual}")]
+    SenderMismatch { expected: String, actual: String },
+
+    #[error("Unauthorized sender: only leader can send AllLogs")]
+    UnauthorizedSender,
+
+    #[error("Duplicate message from dealer: {dealer}")]
+    DuplicateDealer { dealer: String },
+
+    #[error("Too many dealers: {count} exceeds maximum {max}")]
+    TooManyDealers { count: usize, max: usize },
+
+    #[error("Session mismatch: expected {expected}, received {received}")]
+    SessionMismatch { expected: String, received: String },
+
+    #[error("Invalid message: {0}")]
+    InvalidMessage(String),
 }

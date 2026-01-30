@@ -64,14 +64,15 @@ render() {
     echo ""
     
     echo -e "${BOLD}${CYAN}Node Status${NC}"
-    echo -e "┌───────┬──────────┬────────────┬──────────┬────────────┬────────────┬────────────┬────────┐"
-    echo -e "│ ${BOLD}Node${NC}  │ ${BOLD}RPC${NC}      │ ${BOLD}Uptime${NC}     │ ${BOLD}View${NC}     │ ${BOLD}Finalized${NC}  │ ${BOLD}Nullified${NC}  │ ${BOLD}Proposed${NC}   │ ${BOLD}Leader${NC} │"
-    echo -e "├───────┼──────────┼────────────┼──────────┼────────────┼────────────┼────────────┼────────┤"
+    echo -e "┌───────┬──────────┬────────────┬──────────┬────────────┬────────────┬────────────┬────────────┬────────┐"
+    echo -e "│ ${BOLD}Node${NC}  │ ${BOLD}RPC${NC}      │ ${BOLD}Uptime${NC}     │ ${BOLD}View${NC}     │ ${BOLD}Finalized${NC}  │ ${BOLD}Nullified${NC}  │ ${BOLD}Proposed${NC}   │ ${BOLD}Throughput${NC} │ ${BOLD}Leader${NC} │"
+    echo -e "├───────┼──────────┼────────────┼──────────┼────────────┼────────────┼────────────┼────────────┼────────┤"
     
     local healthy_count=0
     local max_uptime=0
     local total_finalized=0
     local max_view=0
+    local max_throughput=0
     
     # Fetch all statuses in parallel
     local all_status
@@ -105,18 +106,29 @@ render() {
                 local leader_str="-"
                 [[ "$leader" == "true" ]] && leader_str="${MAGENTA}★${NC}"
                 
-                printf "│ ${CYAN}%-5s${NC} │ ${GREEN}online${NC}   │ %-10s │ %-8s │ %-10s │ %-10s │ %-10s │   %b    │\n" \
-                    "$i" "$uptime_str" "$view" "$finalized" "$nullified" "$proposed" "$leader_str"
+                # Calculate throughput (blocks/sec)
+                local throughput_str="-"
+                if [[ $uptime -gt 0 && $finalized -gt 0 ]]; then
+                    # Use awk for floating point division
+                    local tps=$(awk "BEGIN {printf \"%.2f\", $finalized / $uptime}")
+                    throughput_str="${tps} b/s"
+                    # Track max for summary
+                    local tps_int=$(awk "BEGIN {printf \"%d\", $finalized * 100 / $uptime}")
+                    [[ $tps_int -gt $max_throughput ]] && max_throughput=$tps_int
+                fi
+                
+                printf "│ ${CYAN}%-5s${NC} │ ${GREEN}online${NC}   │ %-10s │ %-8s │ %-10s │ %-10s │ %-10s │ %-10s │   %b    │\n" \
+                    "$i" "$uptime_str" "$view" "$finalized" "$nullified" "$proposed" "$throughput_str" "$leader_str"
             else
-                printf "│ ${CYAN}%-5s${NC} │ ${RED}offline${NC}  │ -          │ -        │ -          │ -          │ -          │   -    │\n" "$i"
+                printf "│ ${CYAN}%-5s${NC} │ ${RED}offline${NC}  │ -          │ -        │ -          │ -          │ -          │ -          │   -    │\n" "$i"
             fi
         else
-            printf "│ ${CYAN}%-5s${NC} │ ${RED}offline${NC}  │ -          │ -        │ -          │ -          │ -          │   -    │\n" "$i"
+            printf "│ ${CYAN}%-5s${NC} │ ${RED}offline${NC}  │ -          │ -        │ -          │ -          │ -          │ -          │   -    │\n" "$i"
         fi
         ((i++))
     done <<< "$all_status"
     
-    echo -e "└───────┴──────────┴────────────┴──────────┴────────────┴────────────┴────────────┴────────┘"
+    echo -e "└───────┴──────────┴────────────┴──────────┴────────────┴────────────┴────────────┴────────────┴────────┘"
     
     # Summary
     echo ""
@@ -132,7 +144,13 @@ render() {
     local uptime_str="0s"
     [[ $max_uptime -gt 0 ]] && uptime_str=$(format_uptime "$max_uptime")
     
-    echo -e "  ${DIM}RPC Healthy:${NC} ${health_color}${healthy_count}/4${NC}  │  ${DIM}Threshold:${NC} $threshold  │  ${DIM}View:${NC} ${CYAN}$max_view${NC}  │  ${DIM}Finalized:${NC} ${GREEN}$total_finalized${NC}  │  ${DIM}Uptime:${NC} $uptime_str"
+    # Format throughput from stored integer (x100)
+    local throughput_str="0.00 b/s"
+    if [[ $max_throughput -gt 0 ]]; then
+        throughput_str=$(awk "BEGIN {printf \"%.2f b/s\", $max_throughput / 100}")
+    fi
+    
+    echo -e "  ${DIM}Healthy:${NC} ${health_color}${healthy_count}/4${NC}  │  ${DIM}Threshold:${NC} $threshold  │  ${DIM}View:${NC} ${CYAN}$max_view${NC}  │  ${DIM}Finalized:${NC} ${GREEN}$total_finalized${NC}  │  ${DIM}Throughput:${NC} ${CYAN}$throughput_str${NC}  │  ${DIM}Uptime:${NC} $uptime_str"
     
     # Endpoints
     echo ""

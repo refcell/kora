@@ -22,6 +22,10 @@
   <a href="#license">License</a>
 </p>
 
+## Demo
+
+https://github.com/user-attachments/assets/8ea05477-039d-4dd2-a7f3-660f179299f7
+
 > [!CAUTION]
 > Kora is pre-alpha software. Do not expect this to run. Do not run this in production.
 

@@ -181,11 +181,11 @@ if [[ "$INTERACTIVE_DKG" == "true" ]]; then
         timeout=300  # 5 minutes for DKG
         
         while true; do
-            # Check if all DKG containers have exited successfully
-            EXITED=$(docker compose -f compose/devnet.yaml ps --format json 2>/dev/null | \
+            # Check if all DKG containers have exited successfully (use -a to include stopped containers)
+            EXITED=$(docker compose -f compose/devnet.yaml ps -a --format json 2>/dev/null | \
                 jq -r 'select(.Service | startswith("dkg-")) | select(.State == "exited") | select(.ExitCode == 0) | .Service' 2>/dev/null | wc -l | tr -d ' ')
             
-            FAILED=$(docker compose -f compose/devnet.yaml ps --format json 2>/dev/null | \
+            FAILED=$(docker compose -f compose/devnet.yaml ps -a --format json 2>/dev/null | \
                 jq -r 'select(.Service | startswith("dkg-")) | select(.State == "exited") | select(.ExitCode != 0) | .Service' 2>/dev/null | wc -l | tr -d ' ')
             
             elapsed=$(($(date +%s) - start_time))

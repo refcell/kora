@@ -202,13 +202,26 @@ just trusted-devnet
    - Rewrote `ceremony.rs` to use interactive protocol
    - Uses commonware's Joint-Feldman DKG primitives
 
-3. **[Phase 3]** Docker orchestration - TODO
+3. **[Phase 3]** Production hardening ✅ DONE
+   - **Session binding**: Added `CeremonySession` with ceremony ID derived from chain + participants + timestamp
+   - **Anti-replay**: Message deduplication via SHA256 hashes in `seen_messages` set
+   - **Membership validation**: Verify all senders are in participants list
+   - **Sender verification**: Check `from == claimed dealer/player` in all message handlers
+   - **First-seen-wins**: Reject duplicate dealer messages (no overwrites)
+   - **Bounds checking**: Limit message counts to `n` participants
+   - **Condition-based phases**: Replaced fixed 60s timeouts with quorum-based transitions
+   - **Crash recovery**: Added `PersistedDkgState` for resuming interrupted ceremonies
+   - **Authenticated transport**: Created `DkgTransport` using commonware-p2p discovery
+
+4. **[Phase 4]** Docker orchestration - TODO
    - Test the full interactive DKG flow in Docker
+   - Switch from TCP network to authenticated transport in ceremony
    - Verify health checks and completion detection
 
-4. **[Phase 4]** Testing - TODO
-   - Integration tests for the DKG ceremony
+5. **[Phase 5]** Testing - TODO
+   - Integration tests for the DKG ceremony in Docker
    - End-to-end tests with multiple nodes
+   - Failure scenario tests (node crashes, network partitions)
 
 ---
 
@@ -218,8 +231,11 @@ just trusted-devnet
 |------|------------|
 | Share index mismatch | Always persist `share.index` from commonware, don't assume `VALIDATOR_INDEX` |
 | Transcript disagreement | Leader is single source of truth for agreed logs |
-| Startup deadlocks | Implement connection retries + timeouts in code |
-| Partial DKG failure | Set generous timeout; dealers reveal shares if no ack |
+| Startup deadlocks | Implement connection retries + exponential backoff in code |
+| Partial DKG failure | Set generous timeout; condition-based phase transitions |
+| Replay attacks | Ceremony ID + message deduplication |
+| Impersonation | Sender verification in all message handlers |
+| Resource exhaustion | Bounds checking on all message maps |
 
 ---
 
@@ -228,3 +244,4 @@ just trusted-devnet
 - **Decentralized agreement**: Replace leader with threshold agreement on logs
 - **Resharing support**: Use `dkg::Info` with `previous_output` for key rotation
 - **Chain-integrated DKG**: Run ceremony as part of chain bootstrapping
+- **Integrate authenticated transport**: Switch ceremony.rs to use DkgTransport instead of DkgNetwork

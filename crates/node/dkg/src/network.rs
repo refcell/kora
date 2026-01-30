@@ -6,7 +6,7 @@
 use std::{
     collections::HashMap,
     io::{Read, Write},
-    net::{TcpListener, TcpStream},
+    net::{TcpListener, TcpStream, ToSocketAddrs},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -74,10 +74,14 @@ impl DkgNetwork {
         // Write payload
         envelope.extend_from_slice(&payload);
 
-        match TcpStream::connect_timeout(
-            &addr.parse().map_err(|e| DkgError::Network(format!("Invalid addr: {}", e)))?,
-            Duration::from_secs(5),
-        ) {
+        // Resolve the address (supports both IP:port and hostname:port)
+        let socket_addr = addr
+            .to_socket_addrs()
+            .map_err(|e| DkgError::Network(format!("Failed to resolve {}: {}", addr, e)))?
+            .next()
+            .ok_or_else(|| DkgError::Network(format!("No addresses found for {}", addr)))?;
+
+        match TcpStream::connect_timeout(&socket_addr, Duration::from_secs(5)) {
             Ok(mut stream) => {
                 stream
                     .set_write_timeout(Some(Duration::from_secs(5)))

@@ -35,8 +35,13 @@ pub(crate) enum Commands {
 
 #[derive(clap::Args, Debug)]
 pub(crate) struct DkgArgs {
+    /// Path to peers.json file containing participant information.
     #[arg(long)]
     pub peers: PathBuf,
+
+    /// Force restart the DKG ceremony, ignoring any persisted state.
+    #[arg(long, default_value = "false")]
+    pub force_restart: bool,
 }
 
 #[derive(clap::Args, Debug)]
@@ -95,7 +100,11 @@ impl Cli {
             timeout: std::time::Duration::from_secs(300),
         };
 
-        let ceremony = DkgCeremony::new(dkg_config);
+        let ceremony = if args.force_restart {
+            DkgCeremony::new_with_force_restart(dkg_config, true)
+        } else {
+            DkgCeremony::new(dkg_config)
+        };
 
         let rt = tokio::runtime::Runtime::new()?;
         let output = rt.block_on(ceremony.run())?;

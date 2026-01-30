@@ -23,4 +23,13 @@ mod output;
 pub use output::DkgOutput;
 
 mod protocol;
-pub use protocol::{DkgParticipant, ProtocolMessage};
+pub use protocol::{CeremonySession, DkgParticipant, ProtocolMessage, ProtocolMessageKind};
+
+mod state;
+pub use state::{DkgPhase, PersistedDkgState};
+
+mod transport;
+pub use transport::{
+    CHANNEL_DKG, DEFAULT_BACKLOG, DEFAULT_MAX_MESSAGE_SIZE, DKG_NAMESPACE, DkgReceiver, DkgSender,
+    DkgTransport, DkgTransportConfig,
+};

@@ -1,6 +1,7 @@
 //! Simulated transport context wrapper.
 
 use std::{
+    fmt,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     time::{Duration, SystemTime},
 };
@@ -29,11 +30,19 @@ fn remap_socket(socket: SocketAddr, port_offset: u16) -> SocketAddr {
 ///
 /// Forces binding to localhost with randomized port offsets to allow
 /// multiple simulated nodes to run in the same process without port conflicts.
-#[allow(missing_debug_implementations)]
 pub struct SimContext {
     inner: tokio::Context,
     force_base_addr: bool,
     port_offset: u16,
+}
+
+impl fmt::Debug for SimContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SimContext")
+            .field("port_offset", &self.port_offset)
+            .field("force_base_addr", &self.force_base_addr)
+            .finish_non_exhaustive()
+    }
 }
 
 impl SimContext {

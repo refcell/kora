@@ -19,7 +19,6 @@ use crate::{NodeRunContext, NodeRunner, TransportProvider};
 /// This is the primary way to run a kora node with custom execution logic.
 /// The service handles transport creation via the `TransportProvider`,
 /// then delegates node wiring to the `NodeRunner`.
-#[allow(missing_debug_implementations)]
 pub struct KoraNodeService<R, T>
 where
     R: NodeRunner<Transport = T::Transport>,
@@ -28,6 +27,16 @@ where
     runner: R,
     transport_provider: T,
     config: NodeConfig,
+}
+
+impl<R, T> std::fmt::Debug for KoraNodeService<R, T>
+where
+    R: NodeRunner<Transport = T::Transport>,
+    T: TransportProvider,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KoraNodeService").finish_non_exhaustive()
+    }
 }
 
 impl<R, T> KoraNodeService<R, T>

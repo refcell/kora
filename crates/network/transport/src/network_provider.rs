@@ -1,5 +1,7 @@
 //! Production network transport provider implementation.
 
+use std::fmt;
+
 use commonware_cryptography::Signer;
 use commonware_p2p::authenticated::discovery;
 use commonware_runtime::{Clock, Metrics, Network as RNetwork, Quota, Resolver, Spawner};
@@ -16,10 +18,17 @@ use crate::{
 /// Production transport provider using authenticated discovery.
 ///
 /// Wraps a [`TransportConfig`] and builds the real P2P network on demand.
-#[allow(missing_debug_implementations)]
 pub struct NetworkTransportProvider<C: Signer> {
     config: TransportConfig<C>,
     quota: Quota,
+}
+
+impl<C: Signer> fmt::Debug for NetworkTransportProvider<C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NetworkTransportProvider")
+            .field("quota", &self.quota)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<C: Signer> NetworkTransportProvider<C> {
@@ -34,10 +43,15 @@ use commonware_cryptography::PublicKey;
 /// Oracle handle returned by production transport.
 ///
 /// Allows the caller to manage the validator set and block misbehaving peers.
-#[allow(missing_debug_implementations)]
 pub struct NetworkControl<P: PublicKey> {
     /// Oracle for peer management and Byzantine blocking.
     pub oracle: discovery::Oracle<P>,
+}
+
+impl<P: PublicKey> fmt::Debug for NetworkControl<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NetworkControl").finish_non_exhaustive()
+    }
 }
 
 impl<C, E> TransportProvider<C::PublicKey, E> for NetworkTransportProvider<C>

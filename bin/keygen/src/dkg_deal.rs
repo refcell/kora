@@ -16,7 +16,7 @@ use eyre::{Result, WrapErr};
 use serde::{Deserialize, Serialize};
 
 #[derive(Args, Debug)]
-pub struct DkgDealArgs {
+pub(crate) struct DkgDealArgs {
     #[arg(long, default_value = "4")]
     pub validators: usize,
 
@@ -42,7 +42,7 @@ struct ShareJson {
     secret: String,
 }
 
-pub fn run(args: DkgDealArgs) -> Result<()> {
+pub(crate) fn run(args: DkgDealArgs) -> Result<()> {
     tracing::info!(
         validators = args.validators,
         threshold = args.threshold,

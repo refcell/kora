@@ -18,6 +18,12 @@ impl SigsegvHandler {
     ///
     /// When SIGSEGV is delivered to the process, print a stack trace and then exit.
     pub fn install() {
+        // SAFETY: Setting up a signal handler is safe because:
+        // 1. The alternate stack is properly allocated with correct size and alignment
+        // 2. sigaltstack() is called before sigemptyset() and sigaction()
+        // 3. The signal handler (print_stack_trace) only performs async-signal-safe operations
+        // 4. SA_NODEFER and SA_RESETHAND flags prevent recursive signal delivery
+        // 5. This is called at program startup before any threads are created
         unsafe {
             let alt_stack_size: usize = min_sigstack_size() + 64 * 1024;
             let mut alt_stack: libc::stack_t = mem::zeroed();
@@ -40,6 +46,9 @@ unsafe extern "C" {
 
 fn backtrace_stderr(buffer: &[*mut libc::c_void]) {
     let size = buffer.len().try_into().unwrap_or_default();
+    // SAFETY: backtrace_symbols_fd is called with a valid pointer to an array of backtrace
+    // symbols obtained from libc::backtrace(), a valid size, and STDERR_FILENO which is
+    // always a valid file descriptor. Writing to stderr is safe at any time.
     unsafe { backtrace_symbols_fd(buffer.as_ptr(), size, libc::STDERR_FILENO) };
 }
 
@@ -50,6 +59,9 @@ struct RawStderr(());
 
 impl fmt::Write for RawStderr {
     fn write_str(&mut self, s: &str) -> Result<(), fmt::Error> {
+        // SAFETY: libc::write is called with STDERR_FILENO (always valid), a valid string pointer
+        // from s.as_ptr() with correct length s.len(). Writing to stderr does not violate any
+        // invariants and is safe even in a signal handler context.
         let ret = unsafe { libc::write(libc::STDERR_FILENO, s.as_ptr().cast(), s.len()) };
         if ret == -1 { Err(fmt::Error) } else { Ok(()) }
     }
@@ -68,6 +80,9 @@ macro_rules! raw_errln {
 extern "C" fn print_stack_trace(_: libc::c_int) {
     const MAX_FRAMES: usize = 256;
     let mut stack_trace: [*mut libc::c_void; MAX_FRAMES] = [ptr::null_mut(); MAX_FRAMES];
+    // SAFETY: libc::backtrace writes to a valid mutable array of MAX_FRAMES pointers.
+    // The returned depth is guaranteed to be <= MAX_FRAMES, so slicing with [0..depth as usize]
+    // is safe. backtrace() is async-signal-safe and can be called from a signal handler.
     let stack = unsafe {
         // Collect return addresses
         let depth = libc::backtrace(stack_trace.as_mut_ptr(), MAX_FRAMES as i32);
@@ -141,6 +156,9 @@ extern "C" fn print_stack_trace(_: libc::c_int) {
 #[cfg(any(target_os = "linux", target_os = "android"))]
 fn min_sigstack_size() -> usize {
     const AT_MINSIGSTKSZ: core::ffi::c_ulong = 51;
+    // SAFETY: getauxval is a safe way to query auxiliary vector entries. It returns 0 if the
+    // entry is not found, which is the correct behavior. No unsafe preconditions are violated.
+    // getauxval does not access memory based on user input and is async-signal-safe.
     let dynamic_sigstksz = unsafe { libc::getauxval(AT_MINSIGSTKSZ) };
     // If getauxval couldn't find the entry, it returns 0,
     // so take the higher of the "constant" and auxval.

@@ -9,7 +9,9 @@ impl Backtracing {
     pub fn enable() {
         // Enable backtraces unless a RUST_BACKTRACE value has already been explicitly provided.
         if std::env::var_os("RUST_BACKTRACE").is_none() {
-            // We accept the risk that another process may set RUST_BACKTRACE at the same time.
+            // SAFETY: Setting environment variables is safe when called at program startup
+            // before any threads are spawned. No other threads can be accessing the environment
+            // at this point, and set_var has no other unsafe preconditions.
             unsafe { std::env::set_var("RUST_BACKTRACE", "1") };
         }
     }

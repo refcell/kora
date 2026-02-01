@@ -39,11 +39,13 @@ pub struct RevmExecutor {
 
 impl RevmExecutor {
     /// Create a new REVM executor with the given chain ID.
+    #[must_use]
     pub const fn new(chain_id: u64) -> Self {
         Self { config: ExecutionConfig::new(chain_id) }
     }
 
     /// Create a new REVM executor with full configuration.
+    #[must_use]
     pub const fn with_config(config: ExecutionConfig) -> Self {
         Self { config }
     }

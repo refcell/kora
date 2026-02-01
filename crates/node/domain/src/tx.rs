@@ -29,6 +29,7 @@ impl Tx {
     }
 
     /// Create a new transaction from encoded bytes.
+    #[must_use]
     pub const fn new(bytes: Bytes) -> Self {
         Self { bytes }
     }

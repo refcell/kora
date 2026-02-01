@@ -20,6 +20,7 @@ pub struct BlockContext {
 
 impl BlockContext {
     /// Create a new block context.
+    #[must_use]
     pub const fn new(header: Header, parent_hash: B256, prevrandao: B256) -> Self {
         Self { header, parent_hash, prevrandao, blob_base_fee: None }
     }

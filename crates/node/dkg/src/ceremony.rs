@@ -32,11 +32,13 @@ pub struct DkgCeremony {
 
 impl DkgCeremony {
     /// Create a new DKG ceremony.
+    #[must_use]
     pub const fn new(config: DkgConfig) -> Self {
         Self { config, force_restart: false }
     }
 
     /// Create a new DKG ceremony with force restart (ignores existing state).
+    #[must_use]
     pub const fn new_with_force_restart(config: DkgConfig, force_restart: bool) -> Self {
         Self { config, force_restart }
     }

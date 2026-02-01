@@ -11,6 +11,12 @@ use crate::{
 };
 
 /// Code partition backed by commonware-storage.
+///
+/// Stores contract bytecode keyed by the keccak256 hash of the code (code hash).
+/// Values are variable-length byte vectors containing the raw EVM bytecode.
+///
+/// Implements [`QmdbGettable`] for reads and [`QmdbBatchable`] for batch writes.
+/// All writes are atomic and update the authenticated Merkle root.
 pub struct CodeStore {
     inner: StoreSlot<CodeDb>,
 }

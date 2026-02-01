@@ -13,6 +13,13 @@ use crate::{
 };
 
 /// Storage partition backed by commonware-storage.
+///
+/// Stores contract storage slots as key-value pairs. Keys are composite tuples of
+/// (address, generation, slot) encoded via [`StorageKey`], and values are 32-byte
+/// [`U256`] integers.
+///
+/// Implements [`QmdbGettable`] for reads and [`QmdbBatchable`] for batch writes.
+/// All writes are atomic and update the authenticated Merkle root.
 pub struct StorageStore {
     inner: StoreSlot<StorageDb>,
 }

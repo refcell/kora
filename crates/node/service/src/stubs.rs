@@ -147,3 +147,63 @@ impl commonware_p2p::Blocker for StubBlocker {
         async {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use commonware_consensus::{Automaton, types::Epoch};
+
+    #[tokio::test]
+    async fn stub_automaton_genesis_returns_zero_digest() {
+        let mut automaton = StubAutomaton;
+        let digest = automaton.genesis(Epoch::zero()).await;
+        assert_eq!(digest, zero_digest());
+    }
+
+    #[tokio::test]
+    async fn stub_automaton_propose_returns_zero_digest() {
+        let mut automaton = StubAutomaton;
+        let context = commonware_consensus::simplex::types::Context::default();
+        let receiver = automaton.propose(context).await;
+        let digest = receiver.await.expect("receiver should receive");
+        assert_eq!(digest, zero_digest());
+    }
+
+    #[tokio::test]
+    async fn stub_automaton_verify_returns_true() {
+        let mut automaton = StubAutomaton;
+        let context = commonware_consensus::simplex::types::Context::default();
+        let receiver = automaton.verify(context, zero_digest()).await;
+        let result = receiver.await.expect("receiver should receive");
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn stub_relay_broadcast_completes() {
+        let mut relay = StubRelay;
+        relay.broadcast(zero_digest()).await;
+    }
+
+    #[tokio::test]
+    async fn stub_blocker_block_completes() {
+        use commonware_cryptography::ed25519;
+        use commonware_p2p::Blocker;
+
+        let mut blocker = StubBlocker;
+        let (_, public_key) = ed25519::deterministic_key(b"test_peer");
+        blocker.block(public_key).await;
+    }
+
+    #[test]
+    fn stub_reporter_default() {
+        let reporter: StubReporter<commonware_cryptography::ed25519::Scheme> =
+            StubReporter::default();
+        assert!(format!("{:?}", reporter).contains("StubReporter"));
+    }
+
+    #[test]
+    fn zero_digest_is_all_zeros() {
+        let digest = zero_digest();
+        assert!(digest.0.iter().all(|&b| b == 0));
+    }
+}

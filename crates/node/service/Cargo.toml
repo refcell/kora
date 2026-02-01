@@ -31,3 +31,6 @@ tracing.workspace = true
 # Error handling
 eyre.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

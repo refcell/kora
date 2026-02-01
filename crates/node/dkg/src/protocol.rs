@@ -93,7 +93,6 @@ use crate::{DkgConfig, DkgError, DkgOutput, DkgPhase, PersistedDkgState};
 
 /// Inner message types for the DKG protocol (without session binding).
 #[derive(Debug, Clone)]
-#[allow(missing_docs)]
 pub enum ProtocolMessageKind {
     /// Public commitment from a dealer to all players.
     DealerPublic {

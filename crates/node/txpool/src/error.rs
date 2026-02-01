@@ -97,3 +97,120 @@ pub enum TxPoolError {
     #[error("replacement transaction underpriced")]
     ReplacementUnderpriced,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pool_full_display() {
+        let err = TxPoolError::PoolFull;
+        assert_eq!(err.to_string(), "pool is full");
+    }
+
+    #[test]
+    fn test_sender_full_display() {
+        let addr = Address::repeat_byte(0xab);
+        let err = TxPoolError::SenderFull(addr);
+        let display = err.to_string();
+        assert!(display.contains("has too many transactions"));
+        assert!(
+            display.contains("abab") || display.contains("AbAb") || display.contains("ABAB"),
+            "expected address in display: {}",
+            display
+        );
+    }
+
+    #[test]
+    fn test_tx_too_large_display() {
+        let err = TxPoolError::TxTooLarge { size: 150000, max: 131072 };
+        assert_eq!(err.to_string(), "transaction size 150000 exceeds maximum 131072");
+    }
+
+    #[test]
+    fn test_gas_price_too_low_display() {
+        let err = TxPoolError::GasPriceTooLow { price: 1_000_000_000, min: 2_000_000_000 };
+        assert_eq!(err.to_string(), "gas price 1000000000 below minimum 2000000000");
+    }
+
+    #[test]
+    fn test_nonce_too_low_display() {
+        let err = TxPoolError::NonceTooLow { got: 5, expected: 10 };
+        assert_eq!(err.to_string(), "nonce too low: got 5, expected at least 10");
+    }
+
+    #[test]
+    fn test_nonce_gap_display() {
+        let err = TxPoolError::NonceGap { got: 15, expected: 10 };
+        assert_eq!(err.to_string(), "nonce gap: got 15, expected 10");
+    }
+
+    #[test]
+    fn test_insufficient_balance_display() {
+        let err = TxPoolError::InsufficientBalance {
+            need: U256::from(1_000_000_000_000_000_000u128),
+            have: U256::from(500_000_000_000_000_000u128),
+        };
+        let display = err.to_string();
+        assert!(display.contains("insufficient balance"));
+        assert!(display.contains("need"));
+        assert!(display.contains("have"));
+    }
+
+    #[test]
+    fn test_invalid_chain_id_display() {
+        let err = TxPoolError::InvalidChainId { got: 1, expected: 137 };
+        assert_eq!(err.to_string(), "invalid chain id: got 1, expected 137");
+    }
+
+    #[test]
+    fn test_invalid_signature_display() {
+        let err = TxPoolError::InvalidSignature;
+        assert_eq!(err.to_string(), "invalid signature");
+    }
+
+    #[test]
+    fn test_decode_error_display() {
+        let err = TxPoolError::DecodeError("invalid RLP encoding".to_string());
+        assert_eq!(err.to_string(), "failed to decode transaction: invalid RLP encoding");
+    }
+
+    #[test]
+    fn test_intrinsic_gas_too_low_display() {
+        let err = TxPoolError::IntrinsicGasTooLow { limit: 21000, intrinsic: 53000 };
+        assert_eq!(err.to_string(), "gas limit 21000 below intrinsic gas 53000");
+    }
+
+    #[test]
+    fn test_already_exists_display() {
+        let err = TxPoolError::AlreadyExists;
+        assert_eq!(err.to_string(), "transaction already exists");
+    }
+
+    #[test]
+    fn test_state_error_display() {
+        let err = TxPoolError::StateError("database connection failed".to_string());
+        assert_eq!(err.to_string(), "state error: database connection failed");
+    }
+
+    #[test]
+    fn test_replacement_underpriced_display() {
+        let err = TxPoolError::ReplacementUnderpriced;
+        assert_eq!(err.to_string(), "replacement transaction underpriced");
+    }
+
+    #[test]
+    fn test_txpool_error_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<TxPoolError>();
+    }
+
+    #[test]
+    fn test_txpool_error_debug() {
+        let err = TxPoolError::NonceTooLow { got: 1, expected: 5 };
+        let debug = format!("{:?}", err);
+        assert!(debug.contains("NonceTooLow"));
+        assert!(debug.contains("got: 1"));
+        assert!(debug.contains("expected: 5"));
+    }
+}

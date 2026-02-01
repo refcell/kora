@@ -88,3 +88,155 @@ impl From<RpcError> for ErrorObjectOwned {
         ErrorObjectOwned::owned(code, message, None::<()>)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_codes_standard_values() {
+        assert_eq!(codes::PARSE_ERROR, -32700);
+        assert_eq!(codes::INVALID_REQUEST, -32600);
+        assert_eq!(codes::METHOD_NOT_FOUND, -32601);
+        assert_eq!(codes::INVALID_PARAMS, -32602);
+        assert_eq!(codes::INTERNAL_ERROR, -32603);
+    }
+
+    #[test]
+    fn error_codes_server_range() {
+        assert_eq!(codes::SERVER_ERROR, -32000);
+        assert_eq!(codes::RESOURCE_NOT_FOUND, -32001);
+        assert_eq!(codes::RESOURCE_UNAVAILABLE, -32002);
+        assert_eq!(codes::TRANSACTION_REJECTED, -32003);
+        assert_eq!(codes::METHOD_NOT_SUPPORTED, -32004);
+        assert_eq!(codes::LIMIT_EXCEEDED, -32005);
+        assert_eq!(codes::EXECUTION_ERROR, -32015);
+    }
+
+    #[test]
+    fn rpc_error_display_block_not_found() {
+        let err = RpcError::BlockNotFound;
+        assert_eq!(err.to_string(), "block not found");
+    }
+
+    #[test]
+    fn rpc_error_display_transaction_not_found() {
+        let err = RpcError::TransactionNotFound;
+        assert_eq!(err.to_string(), "transaction not found");
+    }
+
+    #[test]
+    fn rpc_error_display_account_not_found() {
+        let err = RpcError::AccountNotFound("0x1234".to_string());
+        assert_eq!(err.to_string(), "account not found: 0x1234");
+    }
+
+    #[test]
+    fn rpc_error_display_invalid_block_number() {
+        let err = RpcError::InvalidBlockNumber("not a number".to_string());
+        assert_eq!(err.to_string(), "invalid block number: not a number");
+    }
+
+    #[test]
+    fn rpc_error_display_invalid_transaction() {
+        let err = RpcError::InvalidTransaction("bad sig".to_string());
+        assert_eq!(err.to_string(), "invalid transaction: bad sig");
+    }
+
+    #[test]
+    fn rpc_error_display_execution_failed() {
+        let err = RpcError::ExecutionFailed("out of gas".to_string());
+        assert_eq!(err.to_string(), "execution failed: out of gas");
+    }
+
+    #[test]
+    fn rpc_error_display_state_error() {
+        let err = RpcError::StateError("db locked".to_string());
+        assert_eq!(err.to_string(), "state error: db locked");
+    }
+
+    #[test]
+    fn rpc_error_display_internal() {
+        let err = RpcError::Internal("unexpected".to_string());
+        assert_eq!(err.to_string(), "internal error: unexpected");
+    }
+
+    #[test]
+    fn rpc_error_display_not_implemented() {
+        let err = RpcError::NotImplemented;
+        assert_eq!(err.to_string(), "method not implemented");
+    }
+
+    #[test]
+    fn rpc_error_to_error_object_block_not_found() {
+        let err = RpcError::BlockNotFound;
+        let obj: ErrorObjectOwned = err.into();
+        assert_eq!(obj.code(), codes::RESOURCE_NOT_FOUND);
+        assert_eq!(obj.message(), "block not found");
+    }
+
+    #[test]
+    fn rpc_error_to_error_object_transaction_not_found() {
+        let err = RpcError::TransactionNotFound;
+        let obj: ErrorObjectOwned = err.into();
+        assert_eq!(obj.code(), codes::RESOURCE_NOT_FOUND);
+        assert_eq!(obj.message(), "transaction not found");
+    }
+
+    #[test]
+    fn rpc_error_to_error_object_account_not_found() {
+        let err = RpcError::AccountNotFound("0xabc".to_string());
+        let obj: ErrorObjectOwned = err.into();
+        assert_eq!(obj.code(), codes::RESOURCE_NOT_FOUND);
+        assert!(obj.message().contains("0xabc"));
+    }
+
+    #[test]
+    fn rpc_error_to_error_object_invalid_block_number() {
+        let err = RpcError::InvalidBlockNumber("bad".to_string());
+        let obj: ErrorObjectOwned = err.into();
+        assert_eq!(obj.code(), codes::INVALID_PARAMS);
+    }
+
+    #[test]
+    fn rpc_error_to_error_object_invalid_transaction() {
+        let err = RpcError::InvalidTransaction("nope".to_string());
+        let obj: ErrorObjectOwned = err.into();
+        assert_eq!(obj.code(), codes::INVALID_PARAMS);
+    }
+
+    #[test]
+    fn rpc_error_to_error_object_execution_failed() {
+        let err = RpcError::ExecutionFailed("reverted".to_string());
+        let obj: ErrorObjectOwned = err.into();
+        assert_eq!(obj.code(), codes::EXECUTION_ERROR);
+    }
+
+    #[test]
+    fn rpc_error_to_error_object_state_error() {
+        let err = RpcError::StateError("corrupt".to_string());
+        let obj: ErrorObjectOwned = err.into();
+        assert_eq!(obj.code(), codes::INTERNAL_ERROR);
+    }
+
+    #[test]
+    fn rpc_error_to_error_object_internal() {
+        let err = RpcError::Internal("oops".to_string());
+        let obj: ErrorObjectOwned = err.into();
+        assert_eq!(obj.code(), codes::INTERNAL_ERROR);
+    }
+
+    #[test]
+    fn rpc_error_to_error_object_not_implemented() {
+        let err = RpcError::NotImplemented;
+        let obj: ErrorObjectOwned = err.into();
+        assert_eq!(obj.code(), codes::METHOD_NOT_SUPPORTED);
+    }
+
+    #[test]
+    fn rpc_error_debug() {
+        let err = RpcError::BlockNotFound;
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("BlockNotFound"));
+    }
+}

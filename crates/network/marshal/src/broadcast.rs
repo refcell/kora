@@ -50,10 +50,9 @@ mod tests {
     use super::*;
 
     #[test]
-    #[allow(clippy::bool_assert_comparison)]
     fn test_defaults() {
         assert_eq!(BroadcastInitializer::DEFAULT_MAILBOX_SIZE, 1024);
         assert_eq!(BroadcastInitializer::DEFAULT_DEQUE_SIZE, 256);
-        assert_eq!(BroadcastInitializer::DEFAULT_PRIORITY, false);
+        assert!(!BroadcastInitializer::DEFAULT_PRIORITY);
     }
 }

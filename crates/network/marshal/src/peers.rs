@@ -78,13 +78,12 @@ mod tests {
     use super::*;
 
     #[test]
-    #[allow(clippy::bool_assert_comparison)]
     fn test_defaults() {
         assert_eq!(PeerInitializer::DEFAULT_MAILBOX_SIZE, 1024);
         assert_eq!(PeerInitializer::DEFAULT_INITIAL_DELAY, Duration::from_millis(200));
         assert_eq!(PeerInitializer::DEFAULT_TIMEOUT, Duration::from_millis(200));
         assert_eq!(PeerInitializer::DEFAULT_FETCH_RETRY_TIMEOUT, Duration::from_millis(100));
-        assert_eq!(PeerInitializer::PRIORITY_REQUESTS, false);
-        assert_eq!(PeerInitializer::PRIORITY_RESPONSES, false);
+        assert!(!PeerInitializer::PRIORITY_REQUESTS);
+        assert!(!PeerInitializer::PRIORITY_RESPONSES);
     }
 }

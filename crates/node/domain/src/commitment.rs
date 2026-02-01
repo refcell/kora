@@ -232,3 +232,78 @@ mod tests {
         assert_eq!(changes, decoded);
     }
 }
+
+    #[test]
+    fn test_empty_state_changes_roundtrip() {
+        let changes = StateChanges::default();
+        assert!(changes.is_empty());
+        let encoded = changes.encode();
+        let decoded = StateChanges::decode_cfg(encoded, &cfg()).expect("decode empty");
+        assert_eq!(changes, decoded);
+        assert!(decoded.is_empty());
+    }
+
+    #[test]
+    fn test_account_change_roundtrip() {
+        let mut storage = BTreeMap::new();
+        storage.insert(U256::from(1u64), U256::from(100u64));
+        let change = AccountChange {
+            touched: true,
+            created: true,
+            selfdestructed: false,
+            nonce: 42,
+            balance: U256::from(1_000_000u64),
+            code_hash: B256::repeat_byte(0xAB),
+            storage,
+        };
+        
+        let encoded = change.encode();
+        let decoded = AccountChange::decode_cfg(encoded, &cfg()).expect("decode change");
+        assert_eq!(change, decoded);
+    }
+
+    #[test]
+    fn test_account_change_empty_storage() {
+        let change = AccountChange {
+            touched: false,
+            created: false,
+            selfdestructed: true,
+            nonce: 0,
+            balance: U256::ZERO,
+            code_hash: B256::ZERO,
+            storage: BTreeMap::new(),
+        };
+        
+        let encoded = change.encode();
+        let decoded = AccountChange::decode_cfg(encoded, &cfg()).expect("decode");
+        assert_eq!(change, decoded);
+    }
+
+    #[test]
+    fn test_state_changes_is_empty() {
+        let mut changes = StateChanges::default();
+        assert!(changes.is_empty());
+        
+        changes.accounts.insert(
+            Address::ZERO,
+            AccountChange {
+                touched: true,
+                created: false,
+                selfdestructed: false,
+                nonce: 1,
+                balance: U256::from(100u64),
+                code_hash: B256::ZERO,
+                storage: BTreeMap::new(),
+            },
+        );
+        assert!(!changes.is_empty());
+    }
+
+    #[test]
+    fn test_state_changes_cfg_debug() {
+        let cfg = StateChangesCfg { max_accounts: 10, max_storage_slots: 20 };
+        let debug_str = format!("{:?}", cfg);
+        assert!(debug_str.contains("max_accounts: 10"));
+        assert!(debug_str.contains("max_storage_slots: 20"));
+    }
+}

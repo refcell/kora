@@ -288,6 +288,67 @@ pub struct SyncInfo {
     pub highest_block: U64,
 }
 
+/// Log filter for `eth_getLogs` queries.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RpcLogFilter {
+    /// Start block (inclusive).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_block: Option<BlockNumberOrTag>,
+    /// End block (inclusive).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to_block: Option<BlockNumberOrTag>,
+    /// Contract address or list of addresses to filter by.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<AddressFilter>,
+    /// Topics to filter by. Each element is OR-matched within, AND-matched across positions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topics: Option<Vec<Option<TopicFilter>>>,
+    /// Block hash to filter by (overrides from_block/to_block).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_hash: Option<B256>,
+}
+
+/// Address filter that can be a single address or list of addresses.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum AddressFilter {
+    /// Single address.
+    Single(Address),
+    /// Multiple addresses (OR logic).
+    Multiple(Vec<Address>),
+}
+
+impl AddressFilter {
+    /// Converts to a vector of addresses.
+    pub fn into_vec(self) -> Vec<Address> {
+        match self {
+            Self::Single(addr) => vec![addr],
+            Self::Multiple(addrs) => addrs,
+        }
+    }
+}
+
+/// Topic filter that can be a single topic or list of topics.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum TopicFilter {
+    /// Single topic.
+    Single(B256),
+    /// Multiple topics (OR logic).
+    Multiple(Vec<B256>),
+}
+
+impl TopicFilter {
+    /// Converts to a vector of topics.
+    pub fn into_vec(self) -> Vec<B256> {
+        match self {
+            Self::Single(topic) => vec![topic],
+            Self::Multiple(topics) => topics,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -437,5 +498,68 @@ mod tests {
         assert!(json.contains("startingBlock"));
         assert!(json.contains("currentBlock"));
         assert!(json.contains("highestBlock"));
+    }
+
+    #[test]
+    fn rpc_log_filter_default() {
+        let filter = RpcLogFilter::default();
+        assert!(filter.from_block.is_none());
+        assert!(filter.to_block.is_none());
+        assert!(filter.address.is_none());
+        assert!(filter.topics.is_none());
+        assert!(filter.block_hash.is_none());
+    }
+
+    #[test]
+    fn address_filter_single_into_vec() {
+        let addr = Address::repeat_byte(0x42);
+        let filter = AddressFilter::Single(addr);
+        let addrs = filter.into_vec();
+        assert_eq!(addrs.len(), 1);
+        assert_eq!(addrs[0], addr);
+    }
+
+    #[test]
+    fn address_filter_multiple_into_vec() {
+        let addr1 = Address::repeat_byte(0x01);
+        let addr2 = Address::repeat_byte(0x02);
+        let filter = AddressFilter::Multiple(vec![addr1, addr2]);
+        let addrs = filter.into_vec();
+        assert_eq!(addrs.len(), 2);
+    }
+
+    #[test]
+    fn topic_filter_single_into_vec() {
+        let topic = B256::repeat_byte(0xab);
+        let filter = TopicFilter::Single(topic);
+        let topics = filter.into_vec();
+        assert_eq!(topics.len(), 1);
+        assert_eq!(topics[0], topic);
+    }
+
+    #[test]
+    fn topic_filter_multiple_into_vec() {
+        let topic1 = B256::repeat_byte(0x01);
+        let topic2 = B256::repeat_byte(0x02);
+        let filter = TopicFilter::Multiple(vec![topic1, topic2]);
+        let topics = filter.into_vec();
+        assert_eq!(topics.len(), 2);
+    }
+
+    #[test]
+    fn address_filter_serde_single() {
+        let addr = Address::repeat_byte(0x42);
+        let json = format!("\"{addr}\"");
+        let filter: AddressFilter = serde_json::from_str(&json).unwrap();
+        assert!(matches!(filter, AddressFilter::Single(a) if a == addr));
+    }
+
+    #[test]
+    fn address_filter_serde_multiple() {
+        let addr1 = Address::repeat_byte(0x01);
+        let addr2 = Address::repeat_byte(0x02);
+        let json = format!("[\"{addr1}\", \"{addr2}\"]");
+        let filter: AddressFilter = serde_json::from_str(&json).unwrap();
+        assert!(matches!(filter, AddressFilter::Multiple(addrs) if addrs.len() == 2));
     }
 }

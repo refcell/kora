@@ -9,7 +9,10 @@ use tokio::sync::RwLock;
 use crate::{
     error::RpcError,
     state_provider::StateProvider,
-    types::{BlockNumberOrTag, CallRequest, RpcBlock, RpcTransaction, RpcTransactionReceipt},
+    types::{
+        BlockNumberOrTag, CallRequest, RpcBlock, RpcLog, RpcLogFilter, RpcTransaction,
+        RpcTransactionReceipt,
+    },
 };
 
 /// Ethereum JSON-RPC API trait.
@@ -125,6 +128,10 @@ pub trait EthApi {
     /// Returns syncing status.
     #[method(name = "syncing")]
     async fn syncing(&self) -> RpcResult<bool>;
+
+    /// Returns logs matching the given filter.
+    #[method(name = "getLogs")]
+    async fn get_logs(&self, filter: RpcLogFilter) -> RpcResult<Vec<RpcLog>>;
 }
 
 /// Net namespace API.
@@ -380,6 +387,11 @@ impl<S: StateProvider + 'static> EthApiServer for EthApiImpl<S> {
 
     async fn syncing(&self) -> RpcResult<bool> {
         Ok(false)
+    }
+
+    async fn get_logs(&self, filter: RpcLogFilter) -> RpcResult<Vec<RpcLog>> {
+        let provider = self.state_provider.read().await;
+        provider.get_logs(filter).await.map_err(Into::into)
     }
 }
 

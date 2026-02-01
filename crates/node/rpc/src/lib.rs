@@ -32,6 +32,6 @@ pub use indexed_provider::IndexedStateProvider;
 
 mod types;
 pub use types::{
-    BlockNumberOrTag, BlockTag, BlockTransactions, CallRequest, RpcBlock, RpcLog, RpcTransaction,
-    RpcTransactionReceipt, SyncInfo, SyncStatus,
+    AddressFilter, BlockNumberOrTag, BlockTag, BlockTransactions, CallRequest, RpcBlock, RpcLog,
+    RpcLogFilter, RpcTransaction, RpcTransactionReceipt, SyncInfo, SyncStatus, TopicFilter,
 };

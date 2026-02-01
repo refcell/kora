@@ -9,7 +9,7 @@ use std::{
 };
 
 use parking_lot::RwLock;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Shared node state that can be updated by the consensus engine.
 #[derive(Debug, Clone)]
@@ -93,7 +93,8 @@ impl NodeState {
 }
 
 /// Serializable node status for RPC responses.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeStatus {
     /// Chain ID.
     pub chain_id: u64,
@@ -113,4 +114,102 @@ pub struct NodeStatus {
     pub peer_count: u64,
     /// Whether this node is the current leader.
     pub is_leader: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn node_status_serde_roundtrip() {
+        let status = NodeStatus {
+            chain_id: 1337,
+            validator_index: 2,
+            uptime_secs: 3600,
+            current_view: 100,
+            finalized_count: 50,
+            proposed_count: 10,
+            nullified_count: 5,
+            peer_count: 3,
+            is_leader: true,
+        };
+
+        let json = serde_json::to_string(&status).unwrap();
+        let parsed: NodeStatus = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(status.chain_id, parsed.chain_id);
+        assert_eq!(status.validator_index, parsed.validator_index);
+        assert_eq!(status.uptime_secs, parsed.uptime_secs);
+        assert_eq!(status.current_view, parsed.current_view);
+        assert_eq!(status.finalized_count, parsed.finalized_count);
+        assert_eq!(status.proposed_count, parsed.proposed_count);
+        assert_eq!(status.nullified_count, parsed.nullified_count);
+        assert_eq!(status.peer_count, parsed.peer_count);
+        assert_eq!(status.is_leader, parsed.is_leader);
+    }
+
+    #[test]
+    fn node_status_json_uses_camel_case() {
+        let status = NodeStatus {
+            chain_id: 1,
+            validator_index: 0,
+            uptime_secs: 0,
+            current_view: 0,
+            finalized_count: 0,
+            proposed_count: 0,
+            nullified_count: 0,
+            peer_count: 0,
+            is_leader: false,
+        };
+
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(json.contains("chainId"));
+        assert!(json.contains("validatorIndex"));
+        assert!(json.contains("uptimeSecs"));
+        assert!(json.contains("currentView"));
+        assert!(json.contains("finalizedCount"));
+        assert!(json.contains("proposedCount"));
+        assert!(json.contains("nullifiedCount"));
+        assert!(json.contains("peerCount"));
+        assert!(json.contains("isLeader"));
+    }
+
+    #[test]
+    fn node_state_new() {
+        let state = NodeState::new(1337, 2);
+        let status = state.status();
+        assert_eq!(status.chain_id, 1337);
+        assert_eq!(status.validator_index, 2);
+        assert!(!status.is_leader);
+    }
+
+    #[test]
+    fn node_state_set_view() {
+        let state = NodeState::new(1, 0);
+        state.set_view(4);
+        let status = state.status();
+        assert_eq!(status.current_view, 4);
+        assert!(status.is_leader);
+    }
+
+    #[test]
+    fn node_state_inc_counters() {
+        let state = NodeState::new(1, 0);
+        state.inc_finalized();
+        state.inc_finalized();
+        state.inc_proposed();
+        state.inc_nullified();
+
+        let status = state.status();
+        assert_eq!(status.finalized_count, 2);
+        assert_eq!(status.proposed_count, 1);
+        assert_eq!(status.nullified_count, 1);
+    }
+
+    #[test]
+    fn node_state_set_peer_count() {
+        let state = NodeState::new(1, 0);
+        state.set_peer_count(5);
+        assert_eq!(state.status().peer_count, 5);
+    }
 }

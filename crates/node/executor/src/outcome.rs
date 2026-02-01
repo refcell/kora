@@ -17,6 +17,7 @@ pub struct ExecutionOutcome {
 
 impl ExecutionOutcome {
     /// Create a new empty execution outcome.
+    #[must_use]
     pub fn new() -> Self {
         Self { changes: ChangeSet::new(), receipts: Vec::new(), gas_used: 0 }
     }

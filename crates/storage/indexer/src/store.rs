@@ -33,6 +33,7 @@ impl Default for BlockIndex {
 
 impl BlockIndex {
     /// Creates a new empty block index.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             blocks_by_hash: RwLock::new(HashMap::new()),

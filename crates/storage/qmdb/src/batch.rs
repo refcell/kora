@@ -17,6 +17,7 @@ pub struct StoreBatches {
 
 impl StoreBatches {
     /// Create empty batches.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }

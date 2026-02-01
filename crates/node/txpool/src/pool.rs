@@ -53,6 +53,7 @@ pub struct TransactionPool {
 
 impl TransactionPool {
     /// Creates a new transaction pool with the given configuration.
+    #[must_use]
     pub fn new(config: PoolConfig) -> Self {
         Self { inner: RwLock::new(PoolInner::new()), config }
     }

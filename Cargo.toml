@@ -46,6 +46,7 @@ codegen-units = 1
 
 [workspace.dependencies]
 # Local crates
+kora-builder = { path = "crates/node/builder" }
 kora-domain = { path = "crates/node/domain" }
 kora-cli = { path = "crates/utilities/cli" }
 kora-crypto = { path = "crates/utilities/crypto" }

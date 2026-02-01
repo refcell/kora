@@ -14,7 +14,7 @@ fn block_on<F: std::future::Future>(f: F) -> F::Output {
     futures::executor::block_on(f)
 }
 
-/// Adapts a [`StateDb`] to REVM's [`DatabaseRef`] interface.
+/// Adapts a [`StateDbRead`] to REVM's [`DatabaseRef`] interface.
 #[derive(Clone, Debug)]
 pub struct StateDbAdapter<S> {
     state: S,

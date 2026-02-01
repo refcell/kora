@@ -44,16 +44,28 @@ impl<A, S, C> QmdbStore<A, S, C> {
     }
 
     /// Borrow stores for reading.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QmdbError::StoreUnavailable`] if stores have been taken and not restored.
     pub fn stores(&self) -> Result<&Stores<A, S, C>, QmdbError> {
         self.stores.as_ref().ok_or(QmdbError::StoreUnavailable)
     }
 
     /// Mutably borrow stores.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QmdbError::StoreUnavailable`] if stores have been taken and not restored.
     pub fn stores_mut(&mut self) -> Result<&mut Stores<A, S, C>, QmdbError> {
         self.stores.as_mut().ok_or(QmdbError::StoreUnavailable)
     }
 
     /// Take ownership of stores for mutation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QmdbError::StoreUnavailable`] if stores have been taken and not restored.
     pub fn take_stores(&mut self) -> Result<Stores<A, S, C>, QmdbError> {
         self.stores.take().ok_or(QmdbError::StoreUnavailable)
     }
@@ -71,6 +83,11 @@ where
     C: QmdbGettable<Key = B256, Value = Vec<u8>>,
 {
     /// Get account info.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stores are unavailable, the account encoding is invalid,
+    /// or the underlying storage operation fails.
     pub async fn get_account(
         &self,
         address: &Address,
@@ -86,12 +103,20 @@ where
     }
 
     /// Get storage value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stores are unavailable or the underlying storage operation fails.
     pub async fn get_storage(&self, key: &StorageKey) -> Result<Option<U256>, QmdbError> {
         let stores = self.stores()?;
         stores.storage.get(key).await.map_err(|e| QmdbError::Storage(e.to_string()))
     }
 
     /// Get code by hash.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stores are unavailable or the underlying storage operation fails.
     pub async fn get_code(&self, hash: &B256) -> Result<Option<Vec<u8>>, QmdbError> {
         let stores = self.stores()?;
         stores.code.get(hash).await.map_err(|e| QmdbError::Storage(e.to_string()))
@@ -106,6 +131,10 @@ where
     C: QmdbGettable<Key = B256, Value = Vec<u8>> + QmdbBatchable<Key = B256, Value = Vec<u8>>,
 {
     /// Build batches from a change set.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stores are unavailable or the underlying storage operation fails.
     pub async fn build_batches(&self, changes: &ChangeSet) -> Result<StoreBatches, QmdbError> {
         let stores = self.stores()?;
         let mut batches = StoreBatches::new();
@@ -159,6 +188,10 @@ where
     }
 
     /// Apply batches to stores.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stores are unavailable or any batch write operation fails.
     pub async fn apply_batches(&mut self, batches: StoreBatches) -> Result<(), QmdbError> {
         let stores = self.stores_mut()?;
 
@@ -184,6 +217,10 @@ where
     }
 
     /// Commit a change set to stores.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stores are unavailable or any storage operation fails.
     pub async fn commit_changes(&mut self, changes: ChangeSet) -> Result<(), QmdbError> {
         if changes.is_empty() {
             return Ok(());

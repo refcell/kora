@@ -11,7 +11,7 @@ use tracing::debug;
 
 use crate::{
     filter::LogFilter,
-    types::{IndexedBlock, IndexedLog, IndexedReceipt, IndexedTransaction},
+    types::{IndexStats, IndexedBlock, IndexedLog, IndexedReceipt, IndexedTransaction},
 };
 
 /// In-memory storage for indexed blocks, transactions, receipts, and logs.
@@ -161,6 +161,36 @@ impl BlockIndex {
         result
     }
 
+    /// Returns the total number of indexed blocks.
+    pub fn block_count(&self) -> usize {
+        self.blocks_by_hash.read().len()
+    }
+
+    /// Returns the total number of indexed transactions.
+    pub fn transaction_count(&self) -> usize {
+        self.transactions.read().len()
+    }
+
+    /// Returns the total number of indexed receipts.
+    pub fn receipt_count(&self) -> usize {
+        self.receipts.read().len()
+    }
+
+    /// Returns true if the index is empty (no blocks indexed).
+    pub fn is_empty(&self) -> bool {
+        self.blocks_by_hash.read().is_empty()
+    }
+
+    /// Returns statistics about the index.
+    pub fn stats(&self) -> IndexStats {
+        IndexStats {
+            block_count: self.block_count(),
+            transaction_count: self.transaction_count(),
+            receipt_count: self.receipt_count(),
+            head_block_number: self.head_block_number(),
+        }
+    }
+
     fn matches_filter(log: &IndexedLog, filter: &LogFilter) -> bool {
         if let Some(addresses) = &filter.address
             && !addresses.contains(&log.address)
@@ -239,7 +269,7 @@ mod tests {
         let block_hash = B256::repeat_byte(1);
         let block = create_test_block(1, block_hash);
 
-        index.insert_block(block.clone(), vec![], vec![]);
+        index.insert_block(block, vec![], vec![]);
 
         let retrieved = index.get_block_by_hash(&block_hash).unwrap();
         assert_eq!(retrieved.number, 1);
@@ -258,7 +288,7 @@ mod tests {
         let tx = create_test_tx(tx_hash, block_hash, 1);
         let receipt = create_test_receipt(tx_hash, block_hash, 1);
 
-        index.insert_block(block, vec![tx], vec![receipt.clone()]);
+        index.insert_block(block, vec![tx], vec![receipt]);
 
         let retrieved_tx = index.get_transaction(&tx_hash).unwrap();
         assert_eq!(retrieved_tx.hash, tx_hash);
@@ -324,5 +354,76 @@ mod tests {
         let filter = LogFilter::new().address(vec![Address::repeat_byte(0xFF)]);
         let logs = index.get_logs(&filter);
         assert!(logs.is_empty());
+    }
+
+    #[test]
+    fn test_is_empty() {
+        let index = BlockIndex::new();
+        assert!(index.is_empty());
+
+        index.insert_block(create_test_block(1, B256::repeat_byte(1)), vec![], vec![]);
+        assert!(!index.is_empty());
+    }
+
+    #[test]
+    fn test_block_count() {
+        let index = BlockIndex::new();
+        assert_eq!(index.block_count(), 0);
+
+        index.insert_block(create_test_block(1, B256::repeat_byte(1)), vec![], vec![]);
+        assert_eq!(index.block_count(), 1);
+
+        index.insert_block(create_test_block(2, B256::repeat_byte(2)), vec![], vec![]);
+        assert_eq!(index.block_count(), 2);
+    }
+
+    #[test]
+    fn test_transaction_count() {
+        let index = BlockIndex::new();
+        assert_eq!(index.transaction_count(), 0);
+
+        let block_hash = B256::repeat_byte(1);
+        let tx1 = create_test_tx(B256::repeat_byte(2), block_hash, 1);
+        let tx2 = create_test_tx(B256::repeat_byte(3), block_hash, 1);
+
+        index.insert_block(create_test_block(1, block_hash), vec![tx1, tx2], vec![]);
+        assert_eq!(index.transaction_count(), 2);
+    }
+
+    #[test]
+    fn test_receipt_count() {
+        let index = BlockIndex::new();
+        assert_eq!(index.receipt_count(), 0);
+
+        let block_hash = B256::repeat_byte(1);
+        let tx_hash = B256::repeat_byte(2);
+        let receipt = create_test_receipt(tx_hash, block_hash, 1);
+
+        index.insert_block(create_test_block(1, block_hash), vec![], vec![receipt]);
+        assert_eq!(index.receipt_count(), 1);
+    }
+
+    #[test]
+    fn test_stats() {
+        let index = BlockIndex::new();
+
+        let stats = index.stats();
+        assert_eq!(stats.block_count, 0);
+        assert_eq!(stats.transaction_count, 0);
+        assert_eq!(stats.receipt_count, 0);
+        assert_eq!(stats.head_block_number, 0);
+
+        let block_hash = B256::repeat_byte(1);
+        let tx_hash = B256::repeat_byte(2);
+        let tx = create_test_tx(tx_hash, block_hash, 5);
+        let receipt = create_test_receipt(tx_hash, block_hash, 5);
+
+        index.insert_block(create_test_block(5, block_hash), vec![tx], vec![receipt]);
+
+        let stats = index.stats();
+        assert_eq!(stats.block_count, 1);
+        assert_eq!(stats.transaction_count, 1);
+        assert_eq!(stats.receipt_count, 1);
+        assert_eq!(stats.head_block_number, 5);
     }
 }

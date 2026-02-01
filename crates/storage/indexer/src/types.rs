@@ -91,3 +91,16 @@ pub struct IndexedLog {
     /// Log index within the block.
     pub log_index: u64,
 }
+
+/// Statistics about the block index.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct IndexStats {
+    /// Total number of indexed blocks.
+    pub block_count: usize,
+    /// Total number of indexed transactions.
+    pub transaction_count: usize,
+    /// Total number of indexed receipts.
+    pub receipt_count: usize,
+    /// Current head block number.
+    pub head_block_number: u64,
+}

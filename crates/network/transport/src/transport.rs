@@ -1,5 +1,7 @@
 //! Network transport bundle.
 
+use std::fmt;
+
 use commonware_cryptography::PublicKey;
 use commonware_p2p::authenticated::discovery;
 use commonware_runtime::{Clock, Handle};
@@ -18,7 +20,6 @@ use crate::channels::{MarshalChannels, SimplexChannels};
 /// Channels are grouped by their consumer:
 /// - [`SimplexChannels`]: For consensus engine (votes, certs, resolver)
 /// - [`MarshalChannels`]: For block dissemination (blocks, backfill)
-#[allow(missing_debug_implementations)]
 pub struct NetworkTransport<P: PublicKey, E: Clock> {
     /// Oracle for peer management and Byzantine blocking.
     ///
@@ -36,4 +37,13 @@ pub struct NetworkTransport<P: PublicKey, E: Clock> {
 
     /// Channels for block dissemination and backfill (marshal).
     pub marshal: MarshalChannels<P, E>,
+}
+
+impl<P: PublicKey, E: Clock> fmt::Debug for NetworkTransport<P, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NetworkTransport")
+            .field("simplex", &self.simplex)
+            .field("marshal", &self.marshal)
+            .finish_non_exhaustive()
+    }
 }

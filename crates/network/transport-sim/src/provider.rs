@@ -1,6 +1,7 @@
 //! Simulated transport provider implementation.
 
 use std::{
+    fmt,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -43,10 +44,15 @@ impl From<SimLinkConfig> for simulated::Link {
 }
 
 /// Control handle for simulated network manipulation.
-#[allow(missing_debug_implementations)]
 pub struct SimControl<P: PublicKey> {
     /// Simulated network oracle.
     pub oracle: simulated::Oracle<P, SimContext>,
+}
+
+impl<P: PublicKey> fmt::Debug for SimControl<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SimControl").finish_non_exhaustive()
+    }
 }
 
 impl<P: PublicKey> SimControl<P> {
@@ -103,12 +109,17 @@ impl<P: PublicKey> SimControl<P> {
 }
 
 /// Registered channel bundle for a simulated node.
-#[allow(missing_debug_implementations)]
 pub struct SimChannels<P: PublicKey> {
     /// Simplex consensus channels.
     pub simplex: SimSimplexChannels<P>,
     /// Marshal block dissemination channels.
     pub marshal: SimMarshalChannels<P>,
+}
+
+impl<P: PublicKey> fmt::Debug for SimChannels<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SimChannels").finish_non_exhaustive()
+    }
 }
 
 /// Registers all required channels for a node.
@@ -161,10 +172,17 @@ pub fn create_sim_network<P: PublicKey>(
 ///
 /// Wraps a shared `SimControl` and provides per-node transport handles.
 /// Multiple nodes can share the same oracle for in-process simulation.
-#[allow(missing_debug_implementations)]
 pub struct SimTransportProvider<P: PublicKey> {
     oracle: Arc<Mutex<SimControl<P>>>,
     peer_id: P,
+}
+
+impl<P: PublicKey> fmt::Debug for SimTransportProvider<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SimTransportProvider")
+            .field("peer_id", &"(PublicKey)")
+            .finish_non_exhaustive()
+    }
 }
 
 impl<P: PublicKey> SimTransportProvider<P> {

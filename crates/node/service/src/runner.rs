@@ -15,11 +15,16 @@ use kora_config::NodeConfig;
 /// This struct is `#[non_exhaustive]` to allow adding fields in future
 /// iterations without breaking existing implementations.
 #[non_exhaustive]
-#[allow(missing_debug_implementations)]
 pub struct NodeRunContext<T> {
     context: tokio::Context,
     config: Arc<NodeConfig>,
     transport: T,
+}
+
+impl<T> std::fmt::Debug for NodeRunContext<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NodeRunContext").finish_non_exhaustive()
+    }
 }
 
 impl<T> NodeRunContext<T> {

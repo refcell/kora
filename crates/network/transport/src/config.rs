@@ -1,6 +1,6 @@
 //! Transport configuration.
 
-use std::net::SocketAddr;
+use std::{fmt, net::SocketAddr};
 
 use commonware_codec::{FixedSize, ReadExt};
 use commonware_cryptography::ed25519;
@@ -22,13 +22,18 @@ pub const DEFAULT_NAMESPACE: &[u8] = b"_COMMONWARE_KORA_NETWORK";
 /// This wraps the commonware discovery config with kora-specific defaults
 /// and provides builder methods for customization.
 #[derive(Clone)]
-#[allow(missing_debug_implementations)]
 pub struct TransportConfig<C: commonware_cryptography::Signer> {
     /// Inner discovery config.
     pub(crate) inner: discovery::Config<C>,
 
     /// Channel backlog size.
     pub(crate) backlog: usize,
+}
+
+impl<C: commonware_cryptography::Signer> fmt::Debug for TransportConfig<C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TransportConfig").field("backlog", &self.backlog).finish_non_exhaustive()
+    }
 }
 
 /// Parsing helpers for transport configuration.

@@ -166,7 +166,6 @@ impl TransportParsing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     #[test]
     fn parse_ingress_ipv4() {

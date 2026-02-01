@@ -3482,6 +3482,7 @@ dependencies = [
  "alloy-primitives",
  "kora-qmdb",
  "kora-traits",
+ "tokio",
 ]
 
 [[package]]

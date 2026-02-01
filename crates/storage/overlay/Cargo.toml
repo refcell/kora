@@ -15,3 +15,6 @@ kora-qmdb = { path = "../qmdb" }
 kora-traits = { path = "../traits" }
 
 alloy-primitives.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

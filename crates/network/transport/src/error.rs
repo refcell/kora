@@ -35,3 +35,27 @@ pub enum TransportError {
     #[error("invalid port: {0}")]
     InvalidPort(String),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_display_messages() {
+        assert_eq!(
+            TransportError::InvalidListenAddr("bad".to_string()).to_string(),
+            "invalid listen address: bad"
+        );
+        assert_eq!(
+            TransportError::InvalidDialableAddr("bad".to_string()).to_string(),
+            "invalid dialable address: bad"
+        );
+        assert!(TransportError::InvalidPublicKey.to_string().contains("public key"));
+    }
+
+    #[test]
+    fn error_is_debug() {
+        let err = TransportError::InvalidPublicKey;
+        assert!(format!("{:?}", err).contains("InvalidPublicKey"));
+    }
+}

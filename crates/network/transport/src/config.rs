@@ -108,12 +108,10 @@ impl TransportParsing {
     ///
     /// Supports both IP:port and hostname:port formats.
     pub fn parse_ingress(addr_str: &str) -> Result<Ingress, TransportError> {
-        // Try parsing as SocketAddr first (IP:port)
         if let Ok(socket) = addr_str.parse::<SocketAddr>() {
             return Ok(Ingress::Socket(socket));
         }
 
-        // Otherwise parse as hostname:port
         let (host, port_str) = addr_str
             .rsplit_once(':')
             .ok_or_else(|| TransportError::InvalidDialableAddr(addr_str.to_string()))?;
@@ -127,18 +125,14 @@ impl TransportParsing {
         Ok(Ingress::Dns { host: hostname, port })
     }
 
+    /// Parse a listen address string into a [`SocketAddr`].
+    pub fn parse_listen_addr(addr_str: &str) -> Result<SocketAddr, TransportError> {
+        addr_str.parse().map_err(|_| TransportError::InvalidListenAddr(addr_str.to_string()))
+    }
+
     /// Parse bootstrap peer strings into (PublicKey, Ingress) tuples.
     ///
     /// Expected format: `PUBLIC_KEY_HEX@HOST:PORT`
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// let peers = TransportParsing::parse_bootstrappers(&[
-    ///     "abcd1234...@192.168.1.1:30303".to_string(),
-    ///     "efgh5678...@node.example.com:30303".to_string(),
-    /// ])?;
-    /// ```
     pub fn parse_bootstrappers(
         bootstrap_peers: &[String],
     ) -> Result<Vec<(ed25519::PublicKey, Ingress)>, TransportError> {
@@ -149,7 +143,6 @@ impl TransportParsing {
                     .split_once('@')
                     .ok_or_else(|| TransportError::InvalidBootstrapPeer(peer_str.clone()))?;
 
-                // Parse public key from hex
                 let pk_hex = pk_hex.strip_prefix("0x").unwrap_or(pk_hex);
                 let pk_bytes = hex::decode(pk_hex)
                     .map_err(|_| TransportError::InvalidPublicKeyHex(pk_hex.to_string()))?;
@@ -158,16 +151,85 @@ impl TransportParsing {
                     return Err(TransportError::InvalidPublicKeyLength(pk_bytes.len()));
                 }
 
-                // Parse public key using the Read trait
                 let mut buf = pk_bytes.as_slice();
                 let public_key = ed25519::PublicKey::read(&mut buf)
                     .map_err(|_| TransportError::InvalidPublicKey)?;
 
-                // Parse ingress address
                 let ingress = Self::parse_ingress(addr)?;
 
                 Ok((public_key, ingress))
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    #[test]
+    fn parse_ingress_ipv4() {
+        let result = TransportParsing::parse_ingress("192.168.1.1:30303").unwrap();
+        assert!(matches!(result, Ingress::Socket(_)));
+    }
+
+    #[test]
+    fn parse_ingress_ipv6() {
+        let result = TransportParsing::parse_ingress("[::1]:8080").unwrap();
+        assert!(matches!(result, Ingress::Socket(_)));
+    }
+
+    #[test]
+    fn parse_ingress_dns() {
+        let result = TransportParsing::parse_ingress("node.example.com:30303").unwrap();
+        assert!(matches!(result, Ingress::Dns { .. }));
+    }
+
+    #[test]
+    fn parse_ingress_missing_port() {
+        let result = TransportParsing::parse_ingress("192.168.1.1");
+        assert!(matches!(result, Err(TransportError::InvalidDialableAddr(_))));
+    }
+
+    #[test]
+    fn parse_listen_addr_valid() {
+        let result = TransportParsing::parse_listen_addr("0.0.0.0:30303").unwrap();
+        assert_eq!(result.port(), 30303);
+    }
+
+    #[test]
+    fn parse_listen_addr_invalid() {
+        let result = TransportParsing::parse_listen_addr("not-an-address");
+        assert!(matches!(result, Err(TransportError::InvalidListenAddr(_))));
+    }
+
+    #[test]
+    fn parse_bootstrappers_valid() {
+        let pk = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
+        let peers = vec![format!("{}@192.168.1.1:30303", pk)];
+        let result = TransportParsing::parse_bootstrappers(&peers).unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn parse_bootstrappers_empty() {
+        let peers: Vec<String> = vec![];
+        let result = TransportParsing::parse_bootstrappers(&peers).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn parse_bootstrappers_invalid_format() {
+        let peers = vec!["no-at-symbol".to_string()];
+        let result = TransportParsing::parse_bootstrappers(&peers);
+        assert!(matches!(result, Err(TransportError::InvalidBootstrapPeer(_))));
+    }
+
+    #[test]
+    fn constants_values() {
+        assert_eq!(DEFAULT_MAX_MESSAGE_SIZE, 1024 * 1024);
+        assert_eq!(DEFAULT_BACKLOG, 256);
+        assert_eq!(DEFAULT_NAMESPACE, b"_COMMONWARE_KORA_NETWORK");
     }
 }

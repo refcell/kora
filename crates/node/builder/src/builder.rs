@@ -52,7 +52,7 @@ impl NodeBuilder<()> {
     /// # Type Parameters
     ///
     /// - `P`: The consensus provider type, must implement [`ConsensusProvider`]
-    pub fn with_consensus<P>(self, consensus: P) -> NodeBuilder<P>
+    pub const fn with_consensus<P>(self, consensus: P) -> NodeBuilder<P>
     where
         P: ConsensusProvider,
     {

@@ -192,8 +192,7 @@ mod tests {
             &self,
             address: &Address,
         ) -> impl std::future::Future<Output = Result<u64, StateDbError>> + Send {
-            let nonce =
-                self.accounts.get(address).map(|a| a.nonce).unwrap_or(0);
+            let nonce = self.accounts.get(address).map(|a| a.nonce).unwrap_or(0);
             async move { Ok(nonce) }
         }
 
@@ -201,8 +200,7 @@ mod tests {
             &self,
             address: &Address,
         ) -> impl std::future::Future<Output = Result<U256, StateDbError>> + Send {
-            let balance =
-                self.accounts.get(address).map(|a| a.balance).unwrap_or(U256::ZERO);
+            let balance = self.accounts.get(address).map(|a| a.balance).unwrap_or(U256::ZERO);
             async move { Ok(balance) }
         }
 
@@ -210,8 +208,7 @@ mod tests {
             &self,
             address: &Address,
         ) -> impl std::future::Future<Output = Result<B256, StateDbError>> + Send {
-            let hash =
-                self.accounts.get(address).map(|a| a.code_hash).unwrap_or(B256::ZERO);
+            let hash = self.accounts.get(address).map(|a| a.code_hash).unwrap_or(B256::ZERO);
             async move { Ok(hash) }
         }
 
@@ -256,7 +253,12 @@ mod tests {
         }
     }
 
-    fn test_account_with_storage(nonce: u64, balance: u64, slot: U256, value: U256) -> AccountUpdate {
+    fn test_account_with_storage(
+        nonce: u64,
+        balance: u64,
+        slot: U256,
+        value: U256,
+    ) -> AccountUpdate {
         let mut storage = BTreeMap::new();
         storage.insert(slot, value);
         AccountUpdate {
@@ -315,8 +317,8 @@ mod tests {
         let slot = U256::from(10);
         let value = U256::from(555);
 
-        let base = MockStateDb::new()
-            .with_account(addr, test_account_with_storage(1, 100, slot, value));
+        let base =
+            MockStateDb::new().with_account(addr, test_account_with_storage(1, 100, slot, value));
         let overlay = OverlayState::new(base, ChangeSet::new());
 
         assert_eq!(overlay.storage(&addr, &slot).await.unwrap(), value);

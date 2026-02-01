@@ -37,3 +37,4 @@ tracing.workspace = true
 [dev-dependencies]
 rstest.workspace = true
 rand.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }

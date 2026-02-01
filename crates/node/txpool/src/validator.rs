@@ -221,3 +221,542 @@ fn max_tx_cost(envelope: &TxEnvelope) -> U256 {
 
     gas_limit * max_fee + value
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, sync::Arc};
+
+    use alloy_consensus::{SignableTransaction as _, TxEip1559, TxLegacy};
+    use alloy_eips::eip2930::{AccessList, AccessListItem};
+    use alloy_primitives::{Signature, TxKind, address, b256};
+    use k256::{ecdsa::SigningKey, elliptic_curve::rand_core::OsRng};
+    use parking_lot::RwLock;
+
+    use super::*;
+
+    /// Mock state database for testing.
+    #[derive(Clone)]
+    struct MockState {
+        nonces: Arc<RwLock<HashMap<Address, u64>>>,
+        balances: Arc<RwLock<HashMap<Address, U256>>>,
+    }
+
+    impl MockState {
+        fn new() -> Self {
+            Self {
+                nonces: Arc::new(RwLock::new(HashMap::new())),
+                balances: Arc::new(RwLock::new(HashMap::new())),
+            }
+        }
+
+        fn with_account(self, address: Address, nonce: u64, balance: U256) -> Self {
+            self.nonces.write().insert(address, nonce);
+            self.balances.write().insert(address, balance);
+            self
+        }
+    }
+
+    impl kora_traits::StateDbRead for MockState {
+        async fn nonce(&self, address: &Address) -> Result<u64, kora_traits::StateDbError> {
+            Ok(*self.nonces.read().get(address).unwrap_or(&0))
+        }
+
+        async fn balance(&self, address: &Address) -> Result<U256, kora_traits::StateDbError> {
+            Ok(*self.balances.read().get(address).unwrap_or(&U256::ZERO))
+        }
+
+        async fn code_hash(&self, _: &Address) -> Result<B256, kora_traits::StateDbError> {
+            Ok(B256::ZERO)
+        }
+
+        async fn code(&self, _: &B256) -> Result<Bytes, kora_traits::StateDbError> {
+            Ok(Bytes::new())
+        }
+
+        async fn storage(&self, _: &Address, _: &U256) -> Result<U256, kora_traits::StateDbError> {
+            Ok(U256::ZERO)
+        }
+    }
+
+    /// Sign a transaction with a random key and return (sender, signed_envelope, raw_bytes).
+    fn sign_eip1559_tx(
+        chain_id: u64,
+        nonce: u64,
+        gas_limit: u64,
+        max_fee_per_gas: u128,
+        value: U256,
+        to: Option<Address>,
+    ) -> (Address, TxEnvelope, Tx) {
+        let signing_key = SigningKey::random(&mut OsRng);
+        let verifying_key = signing_key.verifying_key();
+        let pubkey = verifying_key.to_encoded_point(false);
+        let pubkey_bytes = pubkey.as_bytes();
+        let pubkey_hash = sha3::Keccak256::digest(&pubkey_bytes[1..]);
+        let sender = Address::from_slice(&pubkey_hash[12..]);
+
+        let tx = TxEip1559 {
+            chain_id,
+            nonce,
+            gas_limit,
+            max_fee_per_gas,
+            max_priority_fee_per_gas: max_fee_per_gas,
+            to: to.map(TxKind::Call).unwrap_or(TxKind::Create),
+            value,
+            access_list: Default::default(),
+            input: Bytes::new(),
+        };
+
+        let sig_hash = tx.signature_hash();
+        let (sig, recovery_id) = signing_key.sign_prehash_recoverable(sig_hash.as_slice()).unwrap();
+        let r = U256::from_be_slice(&sig.r().to_bytes());
+        let s = U256::from_be_slice(&sig.s().to_bytes());
+        let v = recovery_id.is_y_odd();
+        let signature = Signature::new(r, s, v);
+
+        let signed = tx.into_signed(signature);
+        let envelope = TxEnvelope::from(signed);
+        let raw_bytes = alloy_rlp::encode(&envelope);
+
+        (sender, envelope, Tx::new(raw_bytes.into()))
+    }
+
+    fn sign_legacy_tx(
+        chain_id: u64,
+        nonce: u64,
+        gas_limit: u64,
+        gas_price: u128,
+        value: U256,
+        to: Option<Address>,
+    ) -> (Address, TxEnvelope, Tx) {
+        let signing_key = SigningKey::random(&mut OsRng);
+        let verifying_key = signing_key.verifying_key();
+        let pubkey = verifying_key.to_encoded_point(false);
+        let pubkey_bytes = pubkey.as_bytes();
+        let pubkey_hash = sha3::Keccak256::digest(&pubkey_bytes[1..]);
+        let sender = Address::from_slice(&pubkey_hash[12..]);
+
+        let tx = TxLegacy {
+            chain_id: Some(chain_id),
+            nonce,
+            gas_limit,
+            gas_price,
+            to: to.map(TxKind::Call).unwrap_or(TxKind::Create),
+            value,
+            input: Bytes::new(),
+        };
+
+        let sig_hash = tx.signature_hash();
+        let (sig, recovery_id) = signing_key.sign_prehash_recoverable(sig_hash.as_slice()).unwrap();
+        let r = U256::from_be_slice(&sig.r().to_bytes());
+        let s = U256::from_be_slice(&sig.s().to_bytes());
+        let v = recovery_id.is_y_odd();
+        let signature = Signature::new(r, s, v);
+
+        let signed = tx.into_signed(signature);
+        let envelope = TxEnvelope::from(signed);
+        let raw_bytes = alloy_rlp::encode(&envelope);
+
+        (sender, envelope, Tx::new(raw_bytes.into()))
+    }
+
+    #[tokio::test]
+    async fn validate_valid_eip1559_transaction() {
+        let chain_id = 1u64;
+        let (sender, _, raw_tx) = sign_eip1559_tx(
+            chain_id,
+            0,
+            21000,
+            1_000_000_000,
+            U256::from(1000),
+            Some(Address::ZERO),
+        );
+
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let config = PoolConfig::default();
+        let validator = TransactionValidator::new(chain_id, state, config);
+
+        let result = validator.validate(raw_tx).await;
+        assert!(result.is_ok());
+
+        let validated = result.unwrap();
+        assert_eq!(validated.sender, sender);
+        assert_eq!(validated.nonce, 0);
+        assert_eq!(validated.gas_limit, 21000);
+    }
+
+    #[tokio::test]
+    async fn validate_valid_legacy_transaction() {
+        let chain_id = 1u64;
+        let (sender, _, raw_tx) = sign_legacy_tx(
+            chain_id,
+            0,
+            21000,
+            1_000_000_000,
+            U256::from(1000),
+            Some(Address::ZERO),
+        );
+
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let config = PoolConfig::default();
+        let validator = TransactionValidator::new(chain_id, state, config);
+
+        let result = validator.validate(raw_tx).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn reject_transaction_too_large() {
+        let chain_id = 1u64;
+        let (sender, _, raw_tx) =
+            sign_eip1559_tx(chain_id, 0, 21000, 1_000_000_000, U256::ZERO, Some(Address::ZERO));
+
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let config = PoolConfig::default().with_max_tx_size(10); // Very small limit
+        let validator = TransactionValidator::new(chain_id, state, config);
+
+        let result = validator.validate(raw_tx).await;
+        assert!(matches!(result, Err(TxPoolError::TxTooLarge { .. })));
+    }
+
+    #[tokio::test]
+    async fn reject_invalid_chain_id() {
+        let chain_id = 1u64;
+        let wrong_chain_id = 5u64;
+        let (sender, _, raw_tx) = sign_eip1559_tx(
+            wrong_chain_id,
+            0,
+            21000,
+            1_000_000_000,
+            U256::ZERO,
+            Some(Address::ZERO),
+        );
+
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let config = PoolConfig::default();
+        let validator = TransactionValidator::new(chain_id, state, config);
+
+        let result = validator.validate(raw_tx).await;
+        assert!(matches!(result, Err(TxPoolError::InvalidChainId { got: 5, expected: 1 })));
+    }
+
+    #[tokio::test]
+    async fn reject_gas_price_too_low() {
+        let chain_id = 1u64;
+        let (sender, _, raw_tx) = sign_eip1559_tx(
+            chain_id,
+            0,
+            21000,
+            100, // Low gas price
+            U256::ZERO,
+            Some(Address::ZERO),
+        );
+
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let config = PoolConfig::default().with_min_gas_price(1_000_000_000);
+        let validator = TransactionValidator::new(chain_id, state, config);
+
+        let result = validator.validate(raw_tx).await;
+        assert!(matches!(result, Err(TxPoolError::GasPriceTooLow { .. })));
+    }
+
+    #[tokio::test]
+    async fn reject_intrinsic_gas_too_low() {
+        let chain_id = 1u64;
+        let (sender, _, raw_tx) = sign_eip1559_tx(
+            chain_id,
+            0,
+            1000, // Gas limit below intrinsic (21000)
+            1_000_000_000,
+            U256::ZERO,
+            Some(Address::ZERO),
+        );
+
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let config = PoolConfig::default();
+        let validator = TransactionValidator::new(chain_id, state, config);
+
+        let result = validator.validate(raw_tx).await;
+        assert!(matches!(result, Err(TxPoolError::IntrinsicGasTooLow { .. })));
+    }
+
+    #[tokio::test]
+    async fn reject_nonce_too_low() {
+        let chain_id = 1u64;
+        let (sender, _, raw_tx) = sign_eip1559_tx(
+            chain_id,
+            0, // nonce 0
+            21000,
+            1_000_000_000,
+            U256::ZERO,
+            Some(Address::ZERO),
+        );
+
+        let state = MockState::new().with_account(sender, 5, U256::from(1_000_000_000_000u64)); // State nonce is 5
+        let config = PoolConfig::default();
+        let validator = TransactionValidator::new(chain_id, state, config);
+
+        let result = validator.validate(raw_tx).await;
+        assert!(matches!(result, Err(TxPoolError::NonceTooLow { got: 0, expected: 5 })));
+    }
+
+    #[tokio::test]
+    async fn reject_insufficient_balance() {
+        let chain_id = 1u64;
+        let (sender, _, raw_tx) = sign_eip1559_tx(
+            chain_id,
+            0,
+            21000,
+            1_000_000_000,                        // 1 gwei
+            U256::from(1_000_000_000_000_000u64), // 0.001 ETH
+            Some(Address::ZERO),
+        );
+
+        let state = MockState::new().with_account(sender, 0, U256::from(1000)); // Only 1000 wei
+        let config = PoolConfig::default();
+        let validator = TransactionValidator::new(chain_id, state, config);
+
+        let result = validator.validate(raw_tx).await;
+        assert!(matches!(result, Err(TxPoolError::InsufficientBalance { .. })));
+    }
+
+    #[tokio::test]
+    async fn accept_future_nonce() {
+        let chain_id = 1u64;
+        let (sender, _, raw_tx) = sign_eip1559_tx(
+            chain_id,
+            10, // Future nonce
+            21000,
+            1_000_000_000,
+            U256::ZERO,
+            Some(Address::ZERO),
+        );
+
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let config = PoolConfig::default();
+        let validator = TransactionValidator::new(chain_id, state, config);
+
+        let result = validator.validate(raw_tx).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().nonce, 10);
+    }
+
+    #[tokio::test]
+    async fn validated_tx_into_ordered() {
+        let chain_id = 1u64;
+        let (sender, _, raw_tx) =
+            sign_eip1559_tx(chain_id, 0, 21000, 1_000_000_000, U256::ZERO, Some(Address::ZERO));
+
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let config = PoolConfig::default();
+        let validator = TransactionValidator::new(chain_id, state, config);
+
+        let validated = validator.validate(raw_tx).await.unwrap();
+        let timestamp = 1234567890u64;
+        let ordered = validated.into_ordered(timestamp);
+
+        assert_eq!(ordered.sender, sender);
+        assert_eq!(ordered.nonce, 0);
+        assert_eq!(ordered.timestamp, timestamp);
+    }
+
+    #[test]
+    fn effective_gas_price_eip1559() {
+        let tx = TxEip1559 {
+            chain_id: 1,
+            nonce: 0,
+            gas_limit: 21000,
+            max_fee_per_gas: 2_000_000_000,
+            max_priority_fee_per_gas: 1_000_000_000,
+            to: TxKind::Call(Address::ZERO),
+            value: U256::ZERO,
+            access_list: Default::default(),
+            input: Bytes::new(),
+        };
+        let sig = Signature::from_scalars_and_parity(B256::ZERO, B256::ZERO, false);
+        let signed = tx.into_signed(sig);
+        let envelope = TxEnvelope::from(signed);
+
+        assert_eq!(effective_gas_price(&envelope), 2_000_000_000);
+    }
+
+    #[test]
+    fn effective_gas_price_legacy() {
+        let tx = TxLegacy {
+            chain_id: Some(1),
+            nonce: 0,
+            gas_limit: 21000,
+            gas_price: 3_000_000_000,
+            to: TxKind::Call(Address::ZERO),
+            value: U256::ZERO,
+            input: Bytes::new(),
+        };
+        let sig = Signature::from_scalars_and_parity(B256::ZERO, B256::ZERO, false);
+        let signed = tx.into_signed(sig);
+        let envelope = TxEnvelope::from(signed);
+
+        assert_eq!(effective_gas_price(&envelope), 3_000_000_000);
+    }
+
+    #[test]
+    fn intrinsic_gas_basic_transfer() {
+        let tx = TxEip1559 {
+            chain_id: 1,
+            nonce: 0,
+            gas_limit: 21000,
+            max_fee_per_gas: 1_000_000_000,
+            max_priority_fee_per_gas: 1_000_000_000,
+            to: TxKind::Call(Address::ZERO),
+            value: U256::ZERO,
+            access_list: Default::default(),
+            input: Bytes::new(),
+        };
+        let sig = Signature::from_scalars_and_parity(B256::ZERO, B256::ZERO, false);
+        let signed = tx.into_signed(sig);
+        let envelope = TxEnvelope::from(signed);
+
+        assert_eq!(intrinsic_gas(&envelope), TX_BASE_GAS);
+    }
+
+    #[test]
+    fn intrinsic_gas_with_data() {
+        let tx = TxEip1559 {
+            chain_id: 1,
+            nonce: 0,
+            gas_limit: 100000,
+            max_fee_per_gas: 1_000_000_000,
+            max_priority_fee_per_gas: 1_000_000_000,
+            to: TxKind::Call(Address::ZERO),
+            value: U256::ZERO,
+            access_list: Default::default(),
+            input: Bytes::from(vec![0u8, 1u8, 0u8, 2u8]), // 2 zero bytes, 2 non-zero
+        };
+        let sig = Signature::from_scalars_and_parity(B256::ZERO, B256::ZERO, false);
+        let signed = tx.into_signed(sig);
+        let envelope = TxEnvelope::from(signed);
+
+        // base + 2*zero + 2*nonzero = 21000 + 2*4 + 2*16 = 21040
+        assert_eq!(
+            intrinsic_gas(&envelope),
+            TX_BASE_GAS + 2 * TX_DATA_ZERO_GAS + 2 * TX_DATA_NON_ZERO_GAS
+        );
+    }
+
+    #[test]
+    fn intrinsic_gas_contract_creation() {
+        let tx = TxEip1559 {
+            chain_id: 1,
+            nonce: 0,
+            gas_limit: 100000,
+            max_fee_per_gas: 1_000_000_000,
+            max_priority_fee_per_gas: 1_000_000_000,
+            to: TxKind::Create,
+            value: U256::ZERO,
+            access_list: Default::default(),
+            input: Bytes::new(),
+        };
+        let sig = Signature::from_scalars_and_parity(B256::ZERO, B256::ZERO, false);
+        let signed = tx.into_signed(sig);
+        let envelope = TxEnvelope::from(signed);
+
+        assert_eq!(intrinsic_gas(&envelope), TX_BASE_GAS + TX_CREATE_GAS);
+    }
+
+    #[test]
+    fn intrinsic_gas_with_access_list() {
+        let access_list = AccessList::from(vec![AccessListItem {
+            address: Address::ZERO,
+            storage_keys: vec![B256::ZERO, B256::ZERO],
+        }]);
+
+        let tx = TxEip1559 {
+            chain_id: 1,
+            nonce: 0,
+            gas_limit: 100000,
+            max_fee_per_gas: 1_000_000_000,
+            max_priority_fee_per_gas: 1_000_000_000,
+            to: TxKind::Call(Address::ZERO),
+            value: U256::ZERO,
+            access_list,
+            input: Bytes::new(),
+        };
+        let sig = Signature::from_scalars_and_parity(B256::ZERO, B256::ZERO, false);
+        let signed = tx.into_signed(sig);
+        let envelope = TxEnvelope::from(signed);
+
+        // base + 1 address + 2 storage keys = 21000 + 2400 + 2*1900 = 27200
+        assert_eq!(
+            intrinsic_gas(&envelope),
+            TX_BASE_GAS + TX_ACCESS_LIST_ADDRESS_GAS + 2 * TX_ACCESS_LIST_STORAGE_KEY_GAS
+        );
+    }
+
+    #[test]
+    fn max_tx_cost_calculation() {
+        let tx = TxEip1559 {
+            chain_id: 1,
+            nonce: 0,
+            gas_limit: 21000,
+            max_fee_per_gas: 1_000_000_000,
+            max_priority_fee_per_gas: 1_000_000_000,
+            to: TxKind::Call(Address::ZERO),
+            value: U256::from(1_000_000_000_000u64),
+            access_list: Default::default(),
+            input: Bytes::new(),
+        };
+        let sig = Signature::from_scalars_and_parity(B256::ZERO, B256::ZERO, false);
+        let signed = tx.into_signed(sig);
+        let envelope = TxEnvelope::from(signed);
+
+        // gas_limit * max_fee + value = 21000 * 1e9 + 1e12 = 21e12 + 1e12 = 22e12
+        let expected =
+            U256::from(21000u64) * U256::from(1_000_000_000u64) + U256::from(1_000_000_000_000u64);
+        assert_eq!(max_tx_cost(&envelope), expected);
+    }
+
+    #[test]
+    fn recover_sender_from_envelope_works() {
+        let signing_key = SigningKey::random(&mut OsRng);
+        let verifying_key = signing_key.verifying_key();
+        let pubkey = verifying_key.to_encoded_point(false);
+        let pubkey_bytes = pubkey.as_bytes();
+        let pubkey_hash = sha3::Keccak256::digest(&pubkey_bytes[1..]);
+        let expected_sender = Address::from_slice(&pubkey_hash[12..]);
+
+        let tx = TxEip1559 {
+            chain_id: 1,
+            nonce: 0,
+            gas_limit: 21000,
+            max_fee_per_gas: 1_000_000_000,
+            max_priority_fee_per_gas: 1_000_000_000,
+            to: TxKind::Call(Address::ZERO),
+            value: U256::ZERO,
+            access_list: Default::default(),
+            input: Bytes::new(),
+        };
+
+        let sig_hash = tx.signature_hash();
+        let (sig, recovery_id) = signing_key.sign_prehash_recoverable(sig_hash.as_slice()).unwrap();
+        let r = U256::from_be_slice(&sig.r().to_bytes());
+        let s = U256::from_be_slice(&sig.s().to_bytes());
+        let v = recovery_id.is_y_odd();
+        let signature = Signature::new(r, s, v);
+
+        let signed = tx.into_signed(signature);
+        let envelope = TxEnvelope::from(signed);
+
+        let recovered = recover_sender_from_envelope(&envelope).unwrap();
+        assert_eq!(recovered, expected_sender);
+    }
+
+    #[tokio::test]
+    async fn reject_invalid_rlp() {
+        let chain_id = 1u64;
+        let state = MockState::new();
+        let config = PoolConfig::default();
+        let validator = TransactionValidator::new(chain_id, state, config);
+
+        let invalid_tx = Tx::new(Bytes::from(vec![0xffu8; 100]));
+        let result = validator.validate(invalid_tx).await;
+        assert!(matches!(result, Err(TxPoolError::DecodeError(_))));
+    }
+}

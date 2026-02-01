@@ -104,3 +104,108 @@ impl Read for Block {
         Ok(Self { parent, height, prevrandao, state_root, txs })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::Bytes;
+    use commonware_codec::Decode;
+    use commonware_cryptography::Committable as _;
+
+    use super::*;
+
+    fn default_block_cfg() -> BlockCfg {
+        BlockCfg { max_txs: 100, tx: TxCfg { max_tx_bytes: 131072 } }
+    }
+
+    fn sample_block() -> Block {
+        Block {
+            parent: BlockId(B256::repeat_byte(0x01)),
+            height: 42,
+            prevrandao: B256::repeat_byte(0xab),
+            state_root: StateRoot(B256::repeat_byte(0xcd)),
+            txs: vec![Tx::new(Bytes::from_static(&[0xde, 0xad, 0xbe, 0xef]))],
+        }
+    }
+
+    #[test]
+    fn block_id_is_deterministic() {
+        let block = sample_block();
+        let id1 = block.id();
+        let id2 = block.id();
+        assert_eq!(id1, id2);
+    }
+
+    #[test]
+    fn block_id_differs_by_height() {
+        let mut block1 = sample_block();
+        let mut block2 = sample_block();
+        block2.height = 100;
+        assert_ne!(block1.id(), block2.id());
+    }
+
+    #[test]
+    fn block_id_differs_by_parent() {
+        let mut block1 = sample_block();
+        let mut block2 = sample_block();
+        block2.parent = BlockId(B256::repeat_byte(0xff));
+        assert_ne!(block1.id(), block2.id());
+    }
+
+    #[test]
+    fn block_id_differs_by_txs() {
+        let mut block1 = sample_block();
+        let mut block2 = sample_block();
+        block2.txs = vec![];
+        assert_ne!(block1.id(), block2.id());
+    }
+
+    #[test]
+    fn block_commitment_matches_digest() {
+        let block = sample_block();
+        assert_eq!(block.commitment(), block.digest());
+    }
+
+    #[test]
+    fn block_encode_decode_roundtrip() {
+        let block = sample_block();
+        let encoded = block.encode();
+        let decoded = Block::decode_cfg(encoded, &default_block_cfg()).expect("decode");
+        assert_eq!(block, decoded);
+    }
+
+    #[test]
+    fn block_encode_size_matches_encoded() {
+        let block = sample_block();
+        assert_eq!(block.encode_size(), block.encode().len());
+    }
+
+    #[test]
+    fn empty_block_roundtrip() {
+        let block = Block {
+            parent: BlockId(B256::ZERO),
+            height: 0,
+            prevrandao: B256::ZERO,
+            state_root: StateRoot(B256::ZERO),
+            txs: vec![],
+        };
+        let encoded = block.encode();
+        let decoded = Block::decode_cfg(encoded, &default_block_cfg()).expect("decode");
+        assert_eq!(block, decoded);
+    }
+
+    #[test]
+    fn block_heightable() {
+        use commonware_consensus::Heightable as _;
+        let block = sample_block();
+        assert_eq!(block.height().get(), 42);
+    }
+
+    #[test]
+    fn block_parent_commitment() {
+        use commonware_consensus::Block as _;
+        let block = sample_block();
+        let parent_commitment = block.parent();
+        let expected = digest_for_block_id(&block.parent);
+        assert_eq!(parent_commitment, expected);
+    }
+}

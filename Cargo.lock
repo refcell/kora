@@ -3681,6 +3681,7 @@ dependencies = [
  "rstest",
  "sha3",
  "thiserror 2.0.18",
+ "tokio",
  "tracing",
 ]
 

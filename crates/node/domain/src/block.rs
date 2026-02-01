@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn block_id_differs_by_height() {
-        let mut block1 = sample_block();
+        let block1 = sample_block();
         let mut block2 = sample_block();
         block2.height = 100;
         assert_ne!(block1.id(), block2.id());
@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn block_id_differs_by_parent() {
-        let mut block1 = sample_block();
+        let block1 = sample_block();
         let mut block2 = sample_block();
         block2.parent = BlockId(B256::repeat_byte(0xff));
         assert_ne!(block1.id(), block2.id());
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn block_id_differs_by_txs() {
-        let mut block1 = sample_block();
+        let block1 = sample_block();
         let mut block2 = sample_block();
         block2.txs = vec![];
         assert_ne!(block1.id(), block2.id());

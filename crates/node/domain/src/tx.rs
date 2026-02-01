@@ -54,3 +54,59 @@ impl Read for Tx {
         Ok(Self { bytes: Bytes::from(data) })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use commonware_codec::Decode;
+
+    fn default_tx_cfg() -> TxCfg {
+        TxCfg { max_tx_bytes: 131072 }
+    }
+
+    #[test]
+    fn tx_id_is_deterministic() {
+        let tx = Tx::new(Bytes::from_static(&[0x01, 0x02, 0x03]));
+        let id1 = tx.id();
+        let id2 = tx.id();
+        assert_eq!(id1, id2);
+    }
+
+    #[test]
+    fn tx_id_differs_by_content() {
+        let tx1 = Tx::new(Bytes::from_static(&[0x01, 0x02]));
+        let tx2 = Tx::new(Bytes::from_static(&[0x01, 0x03]));
+        assert_ne!(tx1.id(), tx2.id());
+    }
+
+    #[test]
+    fn tx_encode_decode_roundtrip() {
+        let tx = Tx::new(Bytes::from_static(&[0xde, 0xad, 0xbe, 0xef]));
+        let encoded = tx.encode();
+        let decoded = Tx::decode_cfg(encoded, &default_tx_cfg()).expect("decode");
+        assert_eq!(tx, decoded);
+    }
+
+    #[test]
+    fn tx_encode_size_matches_encoded() {
+        let tx = Tx::new(Bytes::from_static(&[0x01, 0x02, 0x03, 0x04, 0x05]));
+        assert_eq!(tx.encode_size(), tx.encode().len());
+    }
+
+    #[test]
+    fn empty_tx_roundtrip() {
+        let tx = Tx::new(Bytes::new());
+        let encoded = tx.encode();
+        let decoded = Tx::decode_cfg(encoded, &default_tx_cfg()).expect("decode");
+        assert_eq!(tx, decoded);
+    }
+
+    #[test]
+    fn large_tx_roundtrip() {
+        let data: Vec<u8> = (0..1000).map(|i| (i % 256) as u8).collect();
+        let tx = Tx::new(Bytes::from(data));
+        let encoded = tx.encode();
+        let decoded = Tx::decode_cfg(encoded, &default_tx_cfg()).expect("decode");
+        assert_eq!(tx, decoded);
+    }
+}

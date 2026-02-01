@@ -398,7 +398,7 @@ mod tests {
     #[test]
     fn test_base_accessor() {
         let base = MockStateDb::new();
-        let overlay = OverlayState::new(base.clone(), ChangeSet::new());
+        let overlay = OverlayState::new(base, ChangeSet::new());
         let _ = overlay.base();
     }
 }

@@ -10,7 +10,7 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
 #[derive(Args, Debug)]
-pub struct SetupArgs {
+pub(crate) struct SetupArgs {
     #[arg(long, default_value = "4")]
     pub validators: usize,
 
@@ -55,7 +55,7 @@ struct NodeSetupConfig {
     port: u16,
 }
 
-pub fn run(args: SetupArgs) -> Result<()> {
+pub(crate) fn run(args: SetupArgs) -> Result<()> {
     tracing::info!(
         validators = args.validators,
         threshold = args.threshold,

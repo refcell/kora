@@ -121,10 +121,8 @@ mod tests {
         let topic1 = B256::repeat_byte(0x02);
         let topic2 = B256::repeat_byte(0x03);
 
-        let filter = LogFilter::new()
-            .topic(0, vec![topic0])
-            .topic(1, vec![topic1])
-            .topic(2, vec![topic2]);
+        let filter =
+            LogFilter::new().topic(0, vec![topic0]).topic(1, vec![topic1]).topic(2, vec![topic2]);
 
         assert!(filter.topics[0].is_some());
         assert!(filter.topics[1].is_some());

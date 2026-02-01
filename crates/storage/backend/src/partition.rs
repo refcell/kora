@@ -69,3 +69,124 @@ impl<D> Default for PartitionState<D> {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_returns_uninitialized() {
+        let state: PartitionState<i32> = PartitionState::new();
+        assert!(!state.is_ready());
+    }
+
+    #[test]
+    fn test_default_returns_uninitialized() {
+        let state: PartitionState<i32> = PartitionState::default();
+        assert!(!state.is_ready());
+    }
+
+    #[test]
+    fn test_initialize_from_uninitialized_succeeds() {
+        let mut state: PartitionState<i32> = PartitionState::new();
+        assert!(state.initialize(42).is_ok());
+        assert!(state.is_ready());
+    }
+
+    #[test]
+    fn test_initialize_from_ready_fails() {
+        let mut state: PartitionState<i32> = PartitionState::new();
+        state.initialize(42).unwrap();
+        assert!(state.initialize(100).is_err());
+    }
+
+    #[test]
+    fn test_initialize_from_closed_fails() {
+        let mut state: PartitionState<i32> = PartitionState::new();
+        state.initialize(42).unwrap();
+        state.close().unwrap();
+        assert!(state.initialize(100).is_err());
+    }
+
+    #[test]
+    fn test_get_from_ready_succeeds() {
+        let mut state: PartitionState<i32> = PartitionState::new();
+        state.initialize(42).unwrap();
+        assert_eq!(*state.get().unwrap(), 42);
+    }
+
+    #[test]
+    fn test_get_from_uninitialized_fails() {
+        let state: PartitionState<i32> = PartitionState::new();
+        assert!(state.get().is_err());
+    }
+
+    #[test]
+    fn test_get_from_closed_fails() {
+        let mut state: PartitionState<i32> = PartitionState::new();
+        state.initialize(42).unwrap();
+        state.close().unwrap();
+        assert!(state.get().is_err());
+    }
+
+    #[test]
+    fn test_get_mut_from_ready_succeeds() {
+        let mut state: PartitionState<i32> = PartitionState::new();
+        state.initialize(42).unwrap();
+        *state.get_mut().unwrap() = 100;
+        assert_eq!(*state.get().unwrap(), 100);
+    }
+
+    #[test]
+    fn test_get_mut_from_uninitialized_fails() {
+        let mut state: PartitionState<i32> = PartitionState::new();
+        assert!(state.get_mut().is_err());
+    }
+
+    #[test]
+    fn test_get_mut_from_closed_fails() {
+        let mut state: PartitionState<i32> = PartitionState::new();
+        state.initialize(42).unwrap();
+        state.close().unwrap();
+        assert!(state.get_mut().is_err());
+    }
+
+    #[test]
+    fn test_close_from_ready_succeeds() {
+        let mut state: PartitionState<i32> = PartitionState::new();
+        state.initialize(42).unwrap();
+        assert_eq!(state.close().unwrap(), 42);
+        assert!(!state.is_ready());
+    }
+
+    #[test]
+    fn test_close_from_uninitialized_fails() {
+        let mut state: PartitionState<i32> = PartitionState::new();
+        assert!(state.close().is_err());
+    }
+
+    #[test]
+    fn test_close_twice_fails() {
+        let mut state: PartitionState<i32> = PartitionState::new();
+        state.initialize(42).unwrap();
+        state.close().unwrap();
+        assert!(state.close().is_err());
+    }
+
+    #[test]
+    fn test_is_ready_reflects_state() {
+        let mut state: PartitionState<i32> = PartitionState::new();
+        assert!(!state.is_ready());
+        state.initialize(42).unwrap();
+        assert!(state.is_ready());
+        state.close().unwrap();
+        assert!(!state.is_ready());
+    }
+
+    #[test]
+    fn test_debug_impl() {
+        let state: PartitionState<i32> = PartitionState::new();
+        let debug = format!("{:?}", state);
+        assert!(debug.contains("Uninitialized"));
+    }
+}

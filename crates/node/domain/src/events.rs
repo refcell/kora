@@ -51,3 +51,83 @@ impl Default for LedgerEvents {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_primitives::B256;
+    use commonware_cryptography::sha256::Digest;
+
+    #[test]
+    fn ledger_events_new() {
+        let events = LedgerEvents::new();
+        assert_eq!(events.listeners.lock().len(), 0);
+    }
+
+    #[test]
+    fn ledger_events_default() {
+        let events = LedgerEvents::default();
+        assert_eq!(events.listeners.lock().len(), 0);
+    }
+
+    #[test]
+    fn ledger_events_subscribe_adds_listener() {
+        let events = LedgerEvents::new();
+        let _receiver = events.subscribe();
+        assert_eq!(events.listeners.lock().len(), 1);
+    }
+
+    #[test]
+    fn ledger_events_multiple_subscribers() {
+        let events = LedgerEvents::new();
+        let _r1 = events.subscribe();
+        let _r2 = events.subscribe();
+        let _r3 = events.subscribe();
+        assert_eq!(events.listeners.lock().len(), 3);
+    }
+
+    #[test]
+    fn ledger_events_publish_to_subscriber() {
+        let events = LedgerEvents::new();
+        let mut receiver = events.subscribe();
+
+        let tx_id = TxId(B256::repeat_byte(0x42));
+        events.publish(LedgerEvent::TransactionSubmitted(tx_id));
+
+        let received = receiver.try_next().expect("channel open").expect("should receive event");
+        if let LedgerEvent::TransactionSubmitted(id) = received {
+            assert_eq!(id.0, B256::repeat_byte(0x42));
+        } else {
+            panic!("wrong event type");
+        }
+    }
+
+    #[test]
+    fn ledger_events_publish_to_multiple_subscribers() {
+        let events = LedgerEvents::new();
+        let mut r1 = events.subscribe();
+        let mut r2 = events.subscribe();
+
+        let tx_id = TxId(B256::repeat_byte(0x01));
+        events.publish(LedgerEvent::TransactionSubmitted(tx_id));
+
+        let e1 = r1.try_next().expect("channel open").expect("r1 should receive");
+        let e2 = r2.try_next().expect("channel open").expect("r2 should receive");
+
+        assert!(matches!(e1, LedgerEvent::TransactionSubmitted(_)));
+        assert!(matches!(e2, LedgerEvent::TransactionSubmitted(_)));
+    }
+
+    #[test]
+    fn ledger_events_removes_closed_channels() {
+        let events = LedgerEvents::new();
+        let receiver = events.subscribe();
+        assert_eq!(events.listeners.lock().len(), 1);
+
+        drop(receiver);
+
+        let digest: Digest = [0u8; 32].into();
+        events.publish(LedgerEvent::SnapshotPersisted(digest));
+        assert_eq!(events.listeners.lock().len(), 0);
+    }
+}

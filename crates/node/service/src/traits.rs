@@ -47,3 +47,38 @@ pub trait NodeHandle: Debug + Send + Sync {
     /// Get the current finalized block height.
     fn finalized_height(&self) -> BoxFuture<'_, Result<u64, ServiceError>>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn service_error_display_initialization_failed() {
+        let err = ServiceError::InitializationFailed("test failure".to_string());
+        assert_eq!(err.to_string(), "node initialization failed: test failure");
+    }
+
+    #[test]
+    fn service_error_display_not_running() {
+        let err = ServiceError::NotRunning;
+        assert_eq!(err.to_string(), "node not running");
+    }
+
+    #[test]
+    fn service_error_display_submission_failed() {
+        let err = ServiceError::SubmissionFailed("invalid tx".to_string());
+        assert_eq!(err.to_string(), "transaction submission failed: invalid tx");
+    }
+
+    #[test]
+    fn service_error_display_query_failed() {
+        let err = ServiceError::QueryFailed("timeout".to_string());
+        assert_eq!(err.to_string(), "query failed: timeout");
+    }
+
+    #[test]
+    fn service_error_is_debug() {
+        let err = ServiceError::NotRunning;
+        assert!(format!("{:?}", err).contains("NotRunning"));
+    }
+}

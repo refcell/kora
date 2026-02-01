@@ -94,7 +94,7 @@ impl Read for StateRoot {
 #[cfg(test)]
 mod tests {
     use alloy_evm::revm::primitives::{B256, Bytes, keccak256};
-    use commonware_codec::{Decode as _, Encode as _};
+    use commonware_codec::{Decode as _, DecodeExt as _, Encode as _, FixedSize as _};
 
     use super::*;
     use crate::{Block, BlockCfg, Tx, TxCfg};
@@ -129,5 +129,101 @@ mod tests {
         assert_eq!(block, decoded);
         assert_eq!(block.id(), decoded.id());
         assert_eq!(block.id(), BlockId(keccak256(encoded)));
+    }
+
+    #[test]
+    fn test_idents_write_and_read_b256_roundtrip() {
+        let value = B256::from([0x42u8; 32]);
+        let mut buf = Vec::new();
+        Idents::write_b256(&value, &mut buf);
+        assert_eq!(buf.len(), 32);
+
+        let mut reader = buf.as_slice();
+        let decoded = Idents::read_b256(&mut reader).expect("read b256");
+        assert_eq!(decoded, value);
+    }
+
+    #[test]
+    fn test_idents_read_b256_end_of_buffer() {
+        let short_buf = [0u8; 16];
+        let mut reader = short_buf.as_slice();
+        let result = Idents::read_b256(&mut reader);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_block_id_fixed_size() {
+        assert_eq!(BlockId::SIZE, 32);
+    }
+
+    #[test]
+    fn test_tx_id_fixed_size() {
+        assert_eq!(TxId::SIZE, 32);
+    }
+
+    #[test]
+    fn test_state_root_fixed_size() {
+        assert_eq!(StateRoot::SIZE, 32);
+    }
+
+    #[test]
+    fn test_block_id_ordering() {
+        let a = BlockId(B256::from([0x00u8; 32]));
+        let b = BlockId(B256::from([0x01u8; 32]));
+        let c = BlockId(B256::from([0xFFu8; 32]));
+
+        assert!(a < b);
+        assert!(b < c);
+        assert!(a < c);
+        assert_eq!(a.cmp(&a), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn test_tx_id_ordering() {
+        let a = TxId(B256::from([0x00u8; 32]));
+        let b = TxId(B256::from([0x01u8; 32]));
+        let c = TxId(B256::from([0xFFu8; 32]));
+
+        assert!(a < b);
+        assert!(b < c);
+        assert!(a < c);
+        assert_eq!(a.cmp(&a), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn test_block_id_encode_decode_roundtrip() {
+        let block_id = BlockId(B256::from([0xABu8; 32]));
+        let encoded = block_id.encode();
+        assert_eq!(encoded.len(), 32);
+
+        let decoded = BlockId::decode(encoded).expect("decode block id");
+        assert_eq!(decoded, block_id);
+    }
+
+    #[test]
+    fn test_tx_id_encode_decode_roundtrip() {
+        let tx_id = TxId(B256::from([0xCDu8; 32]));
+        let encoded = tx_id.encode();
+        assert_eq!(encoded.len(), 32);
+
+        let decoded = TxId::decode(encoded).expect("decode tx id");
+        assert_eq!(decoded, tx_id);
+    }
+
+    #[test]
+    fn test_state_root_encode_decode_roundtrip() {
+        let root = StateRoot(B256::from([0xEFu8; 32]));
+        let encoded = root.encode();
+        assert_eq!(encoded.len(), 32);
+
+        let decoded = StateRoot::decode(encoded).expect("decode state root");
+        assert_eq!(decoded, root);
+    }
+
+    #[test]
+    fn test_idents_debug_impl() {
+        let idents = Idents;
+        let debug_str = format!("{idents:?}");
+        assert!(debug_str.contains("Idents"));
     }
 }

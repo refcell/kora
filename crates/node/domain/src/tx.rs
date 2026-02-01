@@ -57,8 +57,9 @@ impl Read for Tx {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use commonware_codec::Decode;
+
+    use super::*;
 
     fn default_tx_cfg() -> TxCfg {
         TxCfg { max_tx_bytes: 131072 }

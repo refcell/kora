@@ -57,6 +57,7 @@ impl<A, S, C> QmdbHandle<A, S, C> {
     }
 
     /// Set the root provider for state root computation.
+    #[must_use]
     pub fn with_root_provider(mut self, provider: Arc<RwLock<dyn RootProvider>>) -> Self {
         self.root_provider = Some(provider);
         self

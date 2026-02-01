@@ -141,6 +141,7 @@ impl ProductionRunner {
     }
 
     /// Configure RPC server.
+    #[must_use]
     pub fn with_rpc(mut self, state: kora_rpc::NodeState, addr: std::net::SocketAddr) -> Self {
         self.rpc_config = Some((state, addr));
         self

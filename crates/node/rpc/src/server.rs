@@ -138,18 +138,21 @@ impl<S: StateProvider + Clone + 'static> RpcServer<S> {
     }
 
     /// Set the transaction submission callback.
+    #[must_use]
     pub fn with_tx_submit(mut self, tx_submit: TxSubmitCallback) -> Self {
         self.tx_submit = Some(tx_submit);
         self
     }
 
     /// Set CORS configuration.
+    #[must_use]
     pub fn with_cors(mut self, cors_config: CorsConfig) -> Self {
         self.cors_config = cors_config;
         self
     }
 
     /// Set maximum concurrent connections.
+    #[must_use]
     pub const fn with_max_connections(mut self, max_connections: u32) -> Self {
         self.max_connections = max_connections;
         self
@@ -328,12 +331,14 @@ impl<S: StateProvider + Clone + 'static> JsonRpcServer<S> {
     }
 
     /// Set the transaction submission callback.
+    #[must_use]
     pub fn with_tx_submit(mut self, tx_submit: TxSubmitCallback) -> Self {
         self.tx_submit = Some(tx_submit);
         self
     }
 
     /// Set maximum concurrent connections.
+    #[must_use]
     pub const fn with_max_connections(mut self, max_connections: u32) -> Self {
         self.max_connections = max_connections;
         self

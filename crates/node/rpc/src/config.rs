@@ -38,18 +38,21 @@ impl RpcServerConfig {
     }
 
     /// Set CORS allowed origins.
+    #[must_use]
     pub fn with_cors_origins(mut self, origins: Vec<String>) -> Self {
         self.cors.allowed_origins = origins;
         self
     }
 
     /// Set rate limit.
+    #[must_use]
     pub const fn with_rate_limit(mut self, requests_per_second: u64) -> Self {
         self.rate_limit.requests_per_second = requests_per_second;
         self
     }
 
     /// Set maximum connections.
+    #[must_use]
     pub const fn with_max_connections(mut self, max_connections: u32) -> Self {
         self.max_connections = max_connections;
         self

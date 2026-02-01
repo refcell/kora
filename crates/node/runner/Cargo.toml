@@ -16,7 +16,6 @@ kora-executor.workspace = true
 kora-ledger.workspace = true
 kora-marshal.workspace = true
 kora-overlay.workspace = true
-kora-qmdb.workspace = true
 kora-qmdb-ledger.workspace = true
 kora-reporters.workspace = true
 kora-rpc.workspace = true
@@ -24,7 +23,6 @@ kora-service.workspace = true
 kora-simplex.workspace = true
 kora-transport.workspace = true
 
-commonware-broadcast.workspace = true
 commonware-codec.workspace = true
 commonware-consensus.workspace = true
 commonware-cryptography.workspace = true
@@ -36,10 +34,8 @@ commonware-utils.workspace = true
 alloy-consensus = { workspace = true }
 alloy-primitives.workspace = true
 
-tokio.workspace = true
 futures.workspace = true
 tracing.workspace = true
-thiserror.workspace = true
 anyhow.workspace = true
 rand.workspace = true
 

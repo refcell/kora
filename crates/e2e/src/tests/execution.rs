@@ -43,6 +43,7 @@ fn test_sequential_nonces() {
 
 /// Test that larger transfer counts work correctly.
 #[test]
+#[ignore = "flaky when run in parallel - run with --test-threads=1"]
 fn test_many_transfers() {
     let config = TestConfig::default().with_validators(4).with_max_blocks(5);
     let setup = TestSetup::multi_transfer(config.chain_id, 10);

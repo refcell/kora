@@ -76,31 +76,31 @@ mod tests {
     #[test]
     fn test_len_counts_all_operations() {
         let mut batches = StoreBatches::new();
-        
+
         batches.accounts.push((Address::ZERO, Some([0u8; 80])));
         batches.accounts.push((Address::repeat_byte(0x01), None));
-        
+
         let key1 = StorageKey::new(Address::ZERO, 0, U256::from(1));
         let key2 = StorageKey::new(Address::ZERO, 0, U256::from(2));
         let key3 = StorageKey::new(Address::ZERO, 0, U256::from(3));
         batches.storage.push((key1, Some(U256::from(100))));
         batches.storage.push((key2, Some(U256::from(200))));
         batches.storage.push((key3, None));
-        
+
         batches.code.push((B256::ZERO, Some(vec![0x60, 0x00])));
-        
+
         assert_eq!(batches.len(), 6);
     }
 
     #[test]
     fn test_deletion_operations() {
         let mut batches = StoreBatches::new();
-        
+
         batches.accounts.push((Address::ZERO, None));
         let key = StorageKey::new(Address::ZERO, 0, U256::ZERO);
         batches.storage.push((key, None));
         batches.code.push((B256::ZERO, None));
-        
+
         assert!(!batches.is_empty());
         assert_eq!(batches.len(), 3);
     }

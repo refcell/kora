@@ -133,3 +133,91 @@ impl<T> StoreSlot<T> {
         self.0.ok_or(BackendError::NotInitialized)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use commonware_codec::{DecodeExt, Encode};
+
+    use super::*;
+
+    #[test]
+    fn test_account_value_roundtrip() {
+        let mut data = [0u8; AccountEncoding::SIZE];
+        data[0] = 0x42;
+        data[79] = 0xFF;
+        let value = AccountValue(data);
+
+        let encoded = value.encode();
+        let decoded = AccountValue::decode(encoded).unwrap();
+        assert_eq!(decoded.0, data);
+    }
+
+    #[test]
+    fn test_account_value_encode_size() {
+        let value = AccountValue([0u8; AccountEncoding::SIZE]);
+        assert_eq!(value.encode_size(), AccountEncoding::SIZE);
+    }
+
+    #[test]
+    fn test_storage_value_roundtrip() {
+        let value = StorageValue(U256::from(12345678u64));
+        let encoded = value.encode();
+        let decoded = StorageValue::decode(encoded).unwrap();
+        assert_eq!(decoded.0, value.0);
+    }
+
+    #[test]
+    fn test_storage_value_max() {
+        let value = StorageValue(U256::MAX);
+        let encoded = value.encode();
+        let decoded = StorageValue::decode(encoded).unwrap();
+        assert_eq!(decoded.0, U256::MAX);
+    }
+
+    #[test]
+    fn test_storage_value_encode_size() {
+        let value = StorageValue(U256::ZERO);
+        assert_eq!(value.encode_size(), 32);
+    }
+
+    #[test]
+    fn test_store_slot_get_succeeds() {
+        let slot = StoreSlot::new(42);
+        assert_eq!(*slot.get().unwrap(), 42);
+    }
+
+    #[test]
+    fn test_store_slot_take_removes_value() {
+        let mut slot = StoreSlot::new(42);
+        assert_eq!(slot.take().unwrap(), 42);
+        assert!(slot.get().is_err());
+    }
+
+    #[test]
+    fn test_store_slot_take_twice_fails() {
+        let mut slot = StoreSlot::new(42);
+        slot.take().unwrap();
+        assert!(slot.take().is_err());
+    }
+
+    #[test]
+    fn test_store_slot_restore_after_take() {
+        let mut slot = StoreSlot::new(42);
+        slot.take().unwrap();
+        slot.restore(100);
+        assert_eq!(*slot.get().unwrap(), 100);
+    }
+
+    #[test]
+    fn test_store_slot_into_inner_succeeds() {
+        let slot = StoreSlot::new(42);
+        assert_eq!(slot.into_inner().unwrap(), 42);
+    }
+
+    #[test]
+    fn test_store_slot_into_inner_after_take_fails() {
+        let mut slot = StoreSlot::new(42);
+        slot.take().unwrap();
+        assert!(slot.into_inner().is_err());
+    }
+}

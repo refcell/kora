@@ -6,7 +6,7 @@ use commonware_cryptography::{Signer as _, ed25519};
 
 use crate::{DkgConfig, DkgParticipant, ProtocolMessage, ProtocolMessageKind};
 
-const TEST_TIMESTAMP: u64 = 1234567890_000_000_000;
+const TEST_TIMESTAMP: u64 = 1_234_567_890_000_000_000;
 
 fn generate_test_keys(n: usize, seed: u64) -> Vec<ed25519::PrivateKey> {
     (0..n).map(|i| ed25519::PrivateKey::from_seed(seed.wrapping_add(i as u64))).collect()

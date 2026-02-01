@@ -76,3 +76,21 @@ where
         self.consensus
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_creates_unit_builder() {
+        let builder = NodeBuilder::new();
+        assert!(format!("{builder:?}").contains("NodeBuilder"));
+    }
+
+    #[test]
+    fn test_default_is_same_as_new() {
+        let default_builder = NodeBuilder::default();
+        let new_builder = NodeBuilder::new();
+        assert_eq!(format!("{default_builder:?}"), format!("{new_builder:?}"));
+    }
+}

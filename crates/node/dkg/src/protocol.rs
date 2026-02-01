@@ -238,13 +238,13 @@ impl ProtocolMessage {
             (None, first_byte)
         };
 
+        let max_degree_nz = core::num::NonZeroU32::new(max_degree)
+            .ok_or(commonware_codec::Error::InvalidLength(0))?;
+
         let kind = match tag {
             0 => {
                 let dealer = ed25519::PublicKey::read(&mut reader)?;
-                let msg = DealerPubMsg::<MinSig>::read_cfg(
-                    &mut reader,
-                    &core::num::NonZeroU32::new(max_degree).unwrap(),
-                )?;
+                let msg = DealerPubMsg::<MinSig>::read_cfg(&mut reader, &max_degree_nz)?;
                 ProtocolMessageKind::DealerPublic { dealer, msg }
             }
             1 => {
@@ -261,7 +261,7 @@ impl ProtocolMessage {
             3 => {
                 let log = SignedDealerLog::<MinSig, ed25519::PrivateKey>::read_cfg(
                     &mut reader,
-                    &core::num::NonZeroU32::new(max_degree).unwrap(),
+                    &max_degree_nz,
                 )?;
                 ProtocolMessageKind::DealerLog { log }
             }
@@ -273,7 +273,7 @@ impl ProtocolMessage {
                     let pk = ed25519::PublicKey::read(&mut reader)?;
                     let log = SignedDealerLog::<MinSig, ed25519::PrivateKey>::read_cfg(
                         &mut reader,
-                        &core::num::NonZeroU32::new(max_degree).unwrap(),
+                        &max_degree_nz,
                     )?;
                     logs.push((pk, log));
                 }

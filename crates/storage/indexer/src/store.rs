@@ -127,6 +127,7 @@ impl BlockIndex {
     }
 
     /// Returns the current head block number.
+    #[must_use]
     pub fn head_block_number(&self) -> u64 {
         self.head_block.load(Ordering::Acquire)
     }
@@ -162,26 +163,31 @@ impl BlockIndex {
     }
 
     /// Returns the total number of indexed blocks.
+    #[must_use]
     pub fn block_count(&self) -> usize {
         self.blocks_by_hash.read().len()
     }
 
     /// Returns the total number of indexed transactions.
+    #[must_use]
     pub fn transaction_count(&self) -> usize {
         self.transactions.read().len()
     }
 
     /// Returns the total number of indexed receipts.
+    #[must_use]
     pub fn receipt_count(&self) -> usize {
         self.receipts.read().len()
     }
 
     /// Returns true if the index is empty (no blocks indexed).
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.blocks_by_hash.read().is_empty()
     }
 
     /// Returns statistics about the index.
+    #[must_use]
     pub fn stats(&self) -> IndexStats {
         IndexStats {
             block_count: self.block_count(),

@@ -68,3 +68,23 @@ impl DefaultEngine {
         engine.start(vote_network, certificate_network, resolver_network)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_engine_has_debug_impl() {
+        let engine = DefaultEngine;
+        let debug_str = format!("{:?}", engine);
+        assert!(debug_str.contains("DefaultEngine"));
+    }
+
+    #[test]
+    fn default_engine_is_copy() {
+        let engine = DefaultEngine;
+        let engine2 = engine;
+        let _ = engine;
+        let _ = engine2;
+    }
+}

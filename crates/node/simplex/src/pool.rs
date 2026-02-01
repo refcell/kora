@@ -24,3 +24,38 @@ impl DefaultPool {
         PoolRef::new(NZU16!(DEFAULT_PAGE_SIZE), NZUsize!(DEFAULT_POOL_CAPACITY))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_page_size_is_64kib() {
+        assert_eq!(DEFAULT_PAGE_SIZE, 65_535);
+    }
+
+    #[test]
+    fn default_pool_capacity_is_10000() {
+        assert_eq!(DEFAULT_POOL_CAPACITY, 10_000);
+    }
+
+    #[test]
+    fn default_pool_has_debug_impl() {
+        let pool = DefaultPool;
+        let debug_str = format!("{:?}", pool);
+        assert!(debug_str.contains("DefaultPool"));
+    }
+
+    #[test]
+    fn default_pool_is_copy() {
+        let pool = DefaultPool;
+        let pool2 = pool;
+        let _ = pool;
+        let _ = pool2;
+    }
+
+    #[test]
+    fn pool_ref_can_be_initialized() {
+        let _pool = DefaultPool::init();
+    }
+}

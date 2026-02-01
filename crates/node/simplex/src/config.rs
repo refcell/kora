@@ -107,3 +107,73 @@ impl DefaultConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_mailbox_size_is_1024() {
+        assert_eq!(DEFAULT_MAILBOX_SIZE, 1024);
+    }
+
+    #[test]
+    fn default_replay_buffer_is_1mib() {
+        assert_eq!(DEFAULT_REPLAY_BUFFER, 1024 * 1024);
+    }
+
+    #[test]
+    fn default_write_buffer_is_1mib() {
+        assert_eq!(DEFAULT_WRITE_BUFFER, 1024 * 1024);
+    }
+
+    #[test]
+    fn default_leader_timeout_is_1_second() {
+        assert_eq!(DEFAULT_LEADER_TIMEOUT, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn default_notarization_timeout_is_2_seconds() {
+        assert_eq!(DEFAULT_NOTARIZATION_TIMEOUT, Duration::from_secs(2));
+    }
+
+    #[test]
+    fn default_nullify_retry_is_5_seconds() {
+        assert_eq!(DEFAULT_NULLIFY_RETRY, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn default_fetch_timeout_is_1_second() {
+        assert_eq!(DEFAULT_FETCH_TIMEOUT, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn default_activity_timeout_is_20_views() {
+        assert_eq!(DEFAULT_ACTIVITY_TIMEOUT, ViewDelta::new(20));
+    }
+
+    #[test]
+    fn default_skip_timeout_is_10_views() {
+        assert_eq!(DEFAULT_SKIP_TIMEOUT, ViewDelta::new(10));
+    }
+
+    #[test]
+    fn default_fetch_concurrent_is_8() {
+        assert_eq!(DEFAULT_FETCH_CONCURRENT, 8);
+    }
+
+    #[test]
+    fn default_config_has_debug_impl() {
+        let config = DefaultConfig;
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("DefaultConfig"));
+    }
+
+    #[test]
+    fn default_config_is_copy() {
+        let config = DefaultConfig;
+        let config2 = config;
+        let _ = config;
+        let _ = config2;
+    }
+}

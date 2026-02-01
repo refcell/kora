@@ -1,3 +1,4 @@
+//! Configuration types for Kora nodes.
 #![doc = include_str!("../README.md")]
 #![doc(issue_tracker_base_url = "https://github.com/refcell/kora/issues/")]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]

@@ -20,7 +20,7 @@ commonware-cryptography.workspace = true
 alloy-evm = { workspace = true, features = ["std"] }
 alloy-primitives.workspace = true
 alloy-consensus = { workspace = true, optional = true }
-alloy-rlp = { workspace = true, optional = true }
+alloy-eips = { workspace = true, optional = true }
 k256 = { workspace = true, optional = true }
 sha3 = { workspace = true, optional = true }
 
@@ -33,5 +33,8 @@ futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+alloy-eips.workspace = true
+
 [features]
-evm = ["dep:alloy-consensus", "dep:alloy-rlp", "dep:k256", "dep:sha3"]
+evm = ["dep:alloy-consensus", "dep:alloy-eips", "dep:k256", "dep:sha3"]

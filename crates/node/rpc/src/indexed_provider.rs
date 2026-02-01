@@ -7,15 +7,15 @@ use std::sync::Arc;
 
 use alloy_primitives::{Address, B256, Bytes, U64, U256};
 use async_trait::async_trait;
-use kora_indexer::{BlockIndex, IndexedBlock, IndexedReceipt, IndexedTransaction};
+use kora_indexer::{BlockIndex, IndexedBlock, IndexedReceipt, IndexedTransaction, LogFilter};
 use kora_traits::{StateDbError, StateDbRead};
 
 use crate::{
     error::RpcError,
     state_provider::StateProvider,
     types::{
-        BlockNumberOrTag, BlockTag, BlockTransactions, RpcBlock, RpcLog, RpcTransaction,
-        RpcTransactionReceipt,
+        BlockNumberOrTag, BlockTag, BlockTransactions, RpcBlock, RpcLog, RpcLogFilter,
+        RpcTransaction, RpcTransactionReceipt,
     },
 };
 
@@ -102,6 +102,49 @@ impl<S: StateDbRead + Send + Sync + 'static> StateProvider for IndexedStateProvi
 
     async fn block_number(&self) -> Result<u64, RpcError> {
         Ok(self.index.head_block_number())
+    }
+
+    async fn get_logs(&self, filter: RpcLogFilter) -> Result<Vec<RpcLog>, RpcError> {
+        let from_block =
+            filter.from_block.as_ref().map(|b| self.resolve_block_number(b)).transpose()?;
+        let to_block =
+            filter.to_block.as_ref().map(|b| self.resolve_block_number(b)).transpose()?;
+
+        let mut log_filter = LogFilter::new();
+        if let Some(from) = from_block {
+            log_filter = log_filter.from_block(from);
+        }
+        if let Some(to) = to_block {
+            log_filter = log_filter.to_block(to);
+        }
+        if let Some(addr_filter) = filter.address {
+            log_filter = log_filter.address(addr_filter.into_vec());
+        }
+        if let Some(topics) = filter.topics {
+            for (i, topic_filter) in topics.into_iter().enumerate() {
+                if let Some(tf) = topic_filter {
+                    log_filter = log_filter.topic(i, tf.into_vec());
+                }
+            }
+        }
+
+        let indexed_logs = self.index.get_logs(&log_filter);
+        let block_number = self.index.head_block_number();
+        let logs = indexed_logs
+            .into_iter()
+            .map(|log| RpcLog {
+                address: log.address,
+                topics: log.topics,
+                data: log.data,
+                block_number: U64::from(block_number),
+                transaction_hash: B256::ZERO,
+                transaction_index: U64::ZERO,
+                block_hash: B256::ZERO,
+                log_index: U64::from(log.log_index),
+                removed: false,
+            })
+            .collect();
+        Ok(logs)
     }
 }
 

@@ -1,6 +1,7 @@
 //! EVM-oriented transaction helpers.
 
 use alloy_consensus::{SignableTransaction as _, TxEip1559, TxEnvelope};
+use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::{Address, Bytes, Signature, TxKind, U256, keccak256};
 use k256::ecdsa::SigningKey;
 use sha3::{Digest as _, Keccak256};
@@ -47,13 +48,15 @@ impl Evm {
         let signature = Signature::from((sig, recid));
         let signed = tx.into_signed(signature);
         let envelope = TxEnvelope::from(signed);
-        Tx::new(Bytes::from(alloy_rlp::encode(envelope)))
+        let mut raw_bytes = Vec::new();
+        envelope.encode_2718(&mut raw_bytes);
+        Tx::new(Bytes::from(raw_bytes))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use alloy_consensus::Transaction;
+    use alloy_consensus::{Transaction, transaction::SignerRecoverable};
     use alloy_eips::eip2718::Decodable2718;
 
     use super::*;

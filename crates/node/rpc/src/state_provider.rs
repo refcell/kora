@@ -5,7 +5,10 @@ use async_trait::async_trait;
 
 use crate::{
     error::RpcError,
-    types::{BlockNumberOrTag, CallRequest, RpcBlock, RpcTransaction, RpcTransactionReceipt},
+    types::{
+        BlockNumberOrTag, CallRequest, RpcBlock, RpcLog, RpcLogFilter, RpcTransaction,
+        RpcTransactionReceipt,
+    },
 };
 
 /// Trait for providing state access to RPC methods.
@@ -73,6 +76,11 @@ pub trait StateProvider: Send + Sync {
         _request: CallRequest,
         _block: Option<BlockNumberOrTag>,
     ) -> Result<u64, RpcError> {
+        Err(RpcError::NotImplemented)
+    }
+
+    /// Get logs matching the given filter.
+    async fn get_logs(&self, _filter: RpcLogFilter) -> Result<Vec<RpcLog>, RpcError> {
         Err(RpcError::NotImplemented)
     }
 }

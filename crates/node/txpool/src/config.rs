@@ -72,4 +72,111 @@ impl PoolConfig {
         self.min_gas_price = min;
         self
     }
+
+    /// Sets the replacement bump percentage.
+    pub const fn with_replacement_bump_percent(mut self, percent: u8) -> Self {
+        self.replacement_bump_percent = percent;
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_values() {
+        let config = PoolConfig::default();
+        assert_eq!(config.max_pending_txs, 4096);
+        assert_eq!(config.max_queued_txs, 1024);
+        assert_eq!(config.max_txs_per_sender, 16);
+        assert_eq!(config.max_tx_size, 128 * 1024);
+        assert_eq!(config.min_gas_price, 0);
+        assert_eq!(config.replacement_bump_percent, 10);
+    }
+
+    #[test]
+    fn new_matches_default() {
+        let new = PoolConfig::new();
+        let default = PoolConfig::default();
+        assert_eq!(new.max_pending_txs, default.max_pending_txs);
+        assert_eq!(new.max_queued_txs, default.max_queued_txs);
+        assert_eq!(new.max_txs_per_sender, default.max_txs_per_sender);
+        assert_eq!(new.max_tx_size, default.max_tx_size);
+        assert_eq!(new.min_gas_price, default.min_gas_price);
+        assert_eq!(new.replacement_bump_percent, default.replacement_bump_percent);
+    }
+
+    #[test]
+    fn builder_with_max_pending_txs() {
+        let config = PoolConfig::new().with_max_pending_txs(8192);
+        assert_eq!(config.max_pending_txs, 8192);
+        assert_eq!(config.max_queued_txs, 1024);
+    }
+
+    #[test]
+    fn builder_with_max_queued_txs() {
+        let config = PoolConfig::new().with_max_queued_txs(2048);
+        assert_eq!(config.max_queued_txs, 2048);
+        assert_eq!(config.max_pending_txs, 4096);
+    }
+
+    #[test]
+    fn builder_with_max_txs_per_sender() {
+        let config = PoolConfig::new().with_max_txs_per_sender(32);
+        assert_eq!(config.max_txs_per_sender, 32);
+    }
+
+    #[test]
+    fn builder_with_max_tx_size() {
+        let config = PoolConfig::new().with_max_tx_size(256 * 1024);
+        assert_eq!(config.max_tx_size, 256 * 1024);
+    }
+
+    #[test]
+    fn builder_with_min_gas_price() {
+        let config = PoolConfig::new().with_min_gas_price(1_000_000_000);
+        assert_eq!(config.min_gas_price, 1_000_000_000);
+    }
+
+    #[test]
+    fn builder_with_replacement_bump_percent() {
+        let config = PoolConfig::new().with_replacement_bump_percent(25);
+        assert_eq!(config.replacement_bump_percent, 25);
+    }
+
+    #[test]
+    fn builder_chaining() {
+        let config = PoolConfig::new()
+            .with_max_pending_txs(10000)
+            .with_max_queued_txs(5000)
+            .with_max_txs_per_sender(50)
+            .with_max_tx_size(64 * 1024)
+            .with_min_gas_price(500)
+            .with_replacement_bump_percent(15);
+
+        assert_eq!(config.max_pending_txs, 10000);
+        assert_eq!(config.max_queued_txs, 5000);
+        assert_eq!(config.max_txs_per_sender, 50);
+        assert_eq!(config.max_tx_size, 64 * 1024);
+        assert_eq!(config.min_gas_price, 500);
+        assert_eq!(config.replacement_bump_percent, 15);
+    }
+
+    #[test]
+    fn clone_preserves_values() {
+        let config = PoolConfig::new().with_max_pending_txs(100).with_min_gas_price(999);
+        let cloned = config.clone();
+
+        assert_eq!(cloned.max_pending_txs, 100);
+        assert_eq!(cloned.min_gas_price, 999);
+    }
+
+    #[test]
+    fn debug_impl() {
+        let config = PoolConfig::new();
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("PoolConfig"));
+        assert!(debug_str.contains("max_pending_txs"));
+    }
 }

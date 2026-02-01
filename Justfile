@@ -72,3 +72,15 @@ devnet-stats:
 # Build docker images
 docker-build:
     cd docker && just build
+
+# Run load generator against devnet
+loadgen *args:
+    cargo run --release --bin loadgen -- {{args}}
+
+# Quick load test (1000 txs)
+loadtest:
+    cargo run --release --bin loadgen -- --total-txs 1000
+
+# Stress test (10000 txs with 50 accounts)
+stresstest:
+    cargo run --release --bin loadgen -- --total-txs 10000 --accounts 50

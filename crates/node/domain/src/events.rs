@@ -54,9 +54,10 @@ impl Default for LedgerEvents {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use alloy_primitives::B256;
     use commonware_cryptography::sha256::Digest;
+
+    use super::*;
 
     #[test]
     fn ledger_events_new() {

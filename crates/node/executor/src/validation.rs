@@ -44,6 +44,7 @@ impl<'a> TxValidator<'a> {
     }
 
     /// Set the blob base fee for Cancun+ validation.
+    #[must_use]
     pub const fn with_blob_base_fee(mut self, blob_base_fee: u128) -> Self {
         self.blob_base_fee = Some(blob_base_fee);
         self

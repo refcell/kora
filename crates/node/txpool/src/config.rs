@@ -44,36 +44,42 @@ impl PoolConfig {
     }
 
     /// Sets the maximum number of pending transactions.
+    #[must_use]
     pub const fn with_max_pending_txs(mut self, max: usize) -> Self {
         self.max_pending_txs = max;
         self
     }
 
     /// Sets the maximum number of queued transactions.
+    #[must_use]
     pub const fn with_max_queued_txs(mut self, max: usize) -> Self {
         self.max_queued_txs = max;
         self
     }
 
     /// Sets the maximum transactions per sender.
+    #[must_use]
     pub const fn with_max_txs_per_sender(mut self, max: usize) -> Self {
         self.max_txs_per_sender = max;
         self
     }
 
     /// Sets the maximum transaction size in bytes.
+    #[must_use]
     pub const fn with_max_tx_size(mut self, max: usize) -> Self {
         self.max_tx_size = max;
         self
     }
 
     /// Sets the minimum gas price required.
+    #[must_use]
     pub const fn with_min_gas_price(mut self, min: u128) -> Self {
         self.min_gas_price = min;
         self
     }
 
     /// Sets the replacement bump percentage.
+    #[must_use]
     pub const fn with_replacement_bump_percent(mut self, percent: u8) -> Self {
         self.replacement_bump_percent = percent;
         self

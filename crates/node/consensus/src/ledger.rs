@@ -101,7 +101,6 @@ where
     /// Currently returns an empty set since `Snapshot<S>` does not contain
     /// transaction data. Transaction deduplication relies on the mempool's
     /// prune mechanism after finalization.
-    #[allow(clippy::missing_const_for_fn)]
     fn collect_ancestor_tx_ids(&self, _parent: Option<Digest>) -> BTreeSet<TxId> {
         let mut excluded = BTreeSet::new();
         let mut current = _parent;

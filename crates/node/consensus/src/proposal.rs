@@ -11,13 +11,11 @@ use kora_traits::StateDb;
 
 use crate::{ConsensusError, Digest, Mempool, Snapshot, SnapshotStore, TxId};
 
-const BLOCK_GAS_LIMIT: u64 = 30_000_000;
-
 fn block_context(height: u64, prevrandao: B256) -> BlockContext {
     let header = Header {
         number: height,
         timestamp: height,
-        gas_limit: BLOCK_GAS_LIMIT,
+        gas_limit: kora_config::DEFAULT_GAS_LIMIT,
         beneficiary: Address::ZERO,
         base_fee_per_gas: Some(0),
         ..Default::default()

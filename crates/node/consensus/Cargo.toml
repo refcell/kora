@@ -9,10 +9,11 @@ description = "Consensus application layer for Kora"
 
 [dependencies]
 # Local crates
-kora-executor = { path = "../executor" }
+kora-config = { path = "../config" }
 kora-domain = { path = "../domain" }
-kora-traits = { path = "../../storage/traits" }
+kora-executor = { path = "../executor" }
 kora-qmdb = { path = "../../storage/qmdb" }
+kora-traits = { path = "../../storage/traits" }
 
 # Alloy
 alloy-primitives.workspace = true

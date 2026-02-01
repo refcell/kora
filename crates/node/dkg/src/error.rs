@@ -2,7 +2,6 @@ use thiserror::Error;
 
 /// Errors that can occur during Distributed Key Generation (DKG) ceremonies.
 #[derive(Debug, Error)]
-#[allow(missing_docs)]
 pub enum DkgError {
     /// The DKG ceremony failed with a message.
     #[error("DKG ceremony failed: {0}")]

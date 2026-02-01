@@ -227,8 +227,8 @@ mod tests {
     use std::{collections::HashMap, sync::Arc};
 
     use alloy_consensus::{SignableTransaction as _, TxEip1559, TxLegacy};
-    use alloy_eips::eip2930::{AccessList, AccessListItem};
-    use alloy_primitives::{Signature, TxKind, address, b256};
+    use alloy_eips::{eip2718::Encodable2718, eip2930::{AccessList, AccessListItem}};
+    use alloy_primitives::{Bytes, Signature, TxKind};
     use k256::{ecdsa::SigningKey, elliptic_curve::rand_core::OsRng};
     use parking_lot::RwLock;
 
@@ -315,7 +315,7 @@ mod tests {
 
         let signed = tx.into_signed(signature);
         let envelope = TxEnvelope::from(signed);
-        let raw_bytes = alloy_rlp::encode(&envelope);
+        let mut raw_bytes = Vec::new(); envelope.encode_2718(&mut raw_bytes);
 
         (sender, envelope, Tx::new(raw_bytes.into()))
     }
@@ -354,7 +354,7 @@ mod tests {
 
         let signed = tx.into_signed(signature);
         let envelope = TxEnvelope::from(signed);
-        let raw_bytes = alloy_rlp::encode(&envelope);
+        let mut raw_bytes = Vec::new(); envelope.encode_2718(&mut raw_bytes);
 
         (sender, envelope, Tx::new(raw_bytes.into()))
     }
@@ -371,7 +371,7 @@ mod tests {
             Some(Address::ZERO),
         );
 
-        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000_000_000u64));
         let config = PoolConfig::default();
         let validator = TransactionValidator::new(chain_id, state, config);
 
@@ -396,7 +396,7 @@ mod tests {
             Some(Address::ZERO),
         );
 
-        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000_000_000u64));
         let config = PoolConfig::default();
         let validator = TransactionValidator::new(chain_id, state, config);
 
@@ -410,7 +410,7 @@ mod tests {
         let (sender, _, raw_tx) =
             sign_eip1559_tx(chain_id, 0, 21000, 1_000_000_000, U256::ZERO, Some(Address::ZERO));
 
-        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000_000_000u64));
         let config = PoolConfig::default().with_max_tx_size(10); // Very small limit
         let validator = TransactionValidator::new(chain_id, state, config);
 
@@ -431,7 +431,7 @@ mod tests {
             Some(Address::ZERO),
         );
 
-        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000_000_000u64));
         let config = PoolConfig::default();
         let validator = TransactionValidator::new(chain_id, state, config);
 
@@ -451,7 +451,7 @@ mod tests {
             Some(Address::ZERO),
         );
 
-        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000_000_000u64));
         let config = PoolConfig::default().with_min_gas_price(1_000_000_000);
         let validator = TransactionValidator::new(chain_id, state, config);
 
@@ -471,7 +471,7 @@ mod tests {
             Some(Address::ZERO),
         );
 
-        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000_000_000u64));
         let config = PoolConfig::default();
         let validator = TransactionValidator::new(chain_id, state, config);
 
@@ -491,7 +491,7 @@ mod tests {
             Some(Address::ZERO),
         );
 
-        let state = MockState::new().with_account(sender, 5, U256::from(1_000_000_000_000u64)); // State nonce is 5
+        let state = MockState::new().with_account(sender, 5, U256::from(1_000_000_000_000_000_000u64)); // State nonce is 5
         let config = PoolConfig::default();
         let validator = TransactionValidator::new(chain_id, state, config);
 
@@ -531,7 +531,7 @@ mod tests {
             Some(Address::ZERO),
         );
 
-        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000_000_000u64));
         let config = PoolConfig::default();
         let validator = TransactionValidator::new(chain_id, state, config);
 
@@ -546,7 +546,7 @@ mod tests {
         let (sender, _, raw_tx) =
             sign_eip1559_tx(chain_id, 0, 21000, 1_000_000_000, U256::ZERO, Some(Address::ZERO));
 
-        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000u64));
+        let state = MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000_000_000u64));
         let config = PoolConfig::default();
         let validator = TransactionValidator::new(chain_id, state, config);
 
@@ -699,7 +699,7 @@ mod tests {
             max_fee_per_gas: 1_000_000_000,
             max_priority_fee_per_gas: 1_000_000_000,
             to: TxKind::Call(Address::ZERO),
-            value: U256::from(1_000_000_000_000u64),
+            value: U256::from(1_000_000_000_000_000_000u64),
             access_list: Default::default(),
             input: Bytes::new(),
         };
@@ -709,7 +709,7 @@ mod tests {
 
         // gas_limit * max_fee + value = 21000 * 1e9 + 1e12 = 21e12 + 1e12 = 22e12
         let expected =
-            U256::from(21000u64) * U256::from(1_000_000_000u64) + U256::from(1_000_000_000_000u64);
+            U256::from(21000u64) * U256::from(1_000_000_000u64) + U256::from(1_000_000_000_000_000_000u64);
         assert_eq!(max_tx_cost(&envelope), expected);
     }
 

@@ -71,7 +71,7 @@ The `ProductionRunner` implements the `NodeRunner` trait and executes the follow
 5. **Marshal Layer**: Sets up block dissemination and ancestry verification
 6. **Simplex Consensus**: Starts the BLS threshold consensus engine
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │                  ProductionRunner                    │
 ├─────────────────────────────────────────────────────┤

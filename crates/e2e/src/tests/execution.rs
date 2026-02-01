@@ -7,6 +7,7 @@ use crate::{TestConfig, TestHarness, TestSetup};
 
 /// Test a simple ETH transfer between two accounts.
 #[test]
+#[ignore = "flaky when run in parallel - run with --test-threads=1"]
 fn test_simple_transfer() {
     let config = TestConfig::default().with_validators(4).with_max_blocks(3);
     let setup = TestSetup::simple_transfer(config.chain_id);

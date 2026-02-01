@@ -15,6 +15,7 @@ pub struct InMemorySeedTracker {
 
 impl InMemorySeedTracker {
     /// Create a new seed tracker with genesis seed.
+    #[must_use]
     pub fn new(genesis_digest: Digest) -> Self {
         let mut seeds = BTreeMap::new();
         seeds.insert(genesis_digest, B256::ZERO);
@@ -22,6 +23,7 @@ impl InMemorySeedTracker {
     }
 
     /// Create an empty seed tracker.
+    #[must_use]
     pub fn empty() -> Self {
         Self { inner: Arc::new(RwLock::new(BTreeMap::new())) }
     }

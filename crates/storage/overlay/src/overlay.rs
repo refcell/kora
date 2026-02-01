@@ -13,6 +13,7 @@ pub struct OverlayState<S> {
 
 impl<S> OverlayState<S> {
     /// Create a new overlay from a base state and a change set.
+    #[must_use]
     pub fn new(base: S, changes: ChangeSet) -> Self {
         Self { base, changes: Arc::new(changes) }
     }

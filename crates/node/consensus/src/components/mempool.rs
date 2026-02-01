@@ -15,6 +15,7 @@ pub struct InMemoryMempool {
 
 impl InMemoryMempool {
     /// Create a new empty mempool.
+    #[must_use]
     pub fn new() -> Self {
         Self { inner: Arc::new(RwLock::new(BTreeMap::new())) }
     }

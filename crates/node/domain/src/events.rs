@@ -28,6 +28,7 @@ pub struct LedgerEvents {
 
 impl LedgerEvents {
     /// Create a new, empty event registry.
+    #[must_use]
     pub fn new() -> Self {
         Self { listeners: Arc::new(Mutex::new(Vec::new())) }
     }

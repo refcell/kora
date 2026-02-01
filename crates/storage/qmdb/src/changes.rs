@@ -13,6 +13,7 @@ pub struct ChangeSet {
 
 impl ChangeSet {
     /// Create an empty change set.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }

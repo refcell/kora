@@ -32,6 +32,7 @@ struct NodeStateInner {
 
 impl NodeState {
     /// Create a new node state.
+    #[must_use]
     pub fn new(chain_id: u64, validator_index: u32) -> Self {
         Self {
             inner: Arc::new(NodeStateInner {

@@ -44,6 +44,7 @@ impl<A, S, C> Clone for QmdbHandle<A, S, C> {
 
 impl<A, S, C> QmdbHandle<A, S, C> {
     /// Create a new handle from stores.
+    #[must_use]
     pub fn new(accounts: A, storage: S, code: C) -> Self {
         Self {
             inner: Arc::new(RwLock::new(QmdbStore::new(accounts, storage, code))),
@@ -52,6 +53,7 @@ impl<A, S, C> QmdbHandle<A, S, C> {
     }
 
     /// Create from an existing `QmdbStore`.
+    #[must_use]
     pub fn from_store(store: QmdbStore<A, S, C>) -> Self {
         Self { inner: Arc::new(RwLock::new(store)), root_provider: None }
     }

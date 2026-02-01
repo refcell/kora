@@ -81,6 +81,7 @@ pub struct SenderQueue {
 
 impl SenderQueue {
     /// Creates a new sender queue.
+    #[must_use]
     pub fn new(sender: Address, initial_nonce: u64) -> Self {
         Self { sender, next_nonce: initial_nonce, pending: Vec::new(), queued: Vec::new() }
     }

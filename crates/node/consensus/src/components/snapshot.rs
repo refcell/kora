@@ -34,6 +34,7 @@ impl<S> Clone for InMemorySnapshotStore<S> {
 
 impl<S> InMemorySnapshotStore<S> {
     /// Create a new empty snapshot store.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             snapshots: Arc::new(RwLock::new(BTreeMap::new())),

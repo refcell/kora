@@ -287,3 +287,155 @@ pub struct SyncInfo {
     /// Highest block.
     pub highest_block: U64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn block_number_or_tag_is_pending() {
+        let pending = BlockNumberOrTag::Tag(BlockTag::Pending);
+        let latest = BlockNumberOrTag::Tag(BlockTag::Latest);
+        let number = BlockNumberOrTag::Number(U64::from(100));
+
+        assert!(pending.is_pending());
+        assert!(!latest.is_pending());
+        assert!(!number.is_pending());
+    }
+
+    #[test]
+    fn block_number_or_tag_is_latest() {
+        let latest_tag = BlockNumberOrTag::Tag(BlockTag::Latest);
+        let latest_default = BlockNumberOrTag::Latest;
+        let pending = BlockNumberOrTag::Tag(BlockTag::Pending);
+        let number = BlockNumberOrTag::Number(U64::from(100));
+
+        assert!(latest_tag.is_latest());
+        assert!(latest_default.is_latest());
+        assert!(!pending.is_latest());
+        assert!(!number.is_latest());
+    }
+
+    #[test]
+    fn block_number_or_tag_default() {
+        let default = BlockNumberOrTag::default();
+        assert!(default.is_latest());
+    }
+
+    #[test]
+    fn block_tag_default() {
+        let default = BlockTag::default();
+        assert_eq!(default, BlockTag::Latest);
+    }
+
+    #[test]
+    fn block_transactions_default() {
+        let default = BlockTransactions::default();
+        assert!(matches!(default, BlockTransactions::Hashes(v) if v.is_empty()));
+    }
+
+    #[test]
+    fn call_request_input_data_prefers_input() {
+        let req = CallRequest {
+            input: Some(Bytes::from_static(&[0x01, 0x02])),
+            data: Some(Bytes::from_static(&[0x03, 0x04])),
+            ..Default::default()
+        };
+        assert_eq!(req.input_data(), Bytes::from_static(&[0x01, 0x02]));
+    }
+
+    #[test]
+    fn call_request_input_data_falls_back_to_data() {
+        let req =
+            CallRequest { data: Some(Bytes::from_static(&[0x03, 0x04])), ..Default::default() };
+        assert_eq!(req.input_data(), Bytes::from_static(&[0x03, 0x04]));
+    }
+
+    #[test]
+    fn call_request_input_data_returns_empty_if_none() {
+        let req = CallRequest::default();
+        assert!(req.input_data().is_empty());
+    }
+
+    #[test]
+    fn block_tag_serde_roundtrip() {
+        let tags = [
+            BlockTag::Earliest,
+            BlockTag::Finalized,
+            BlockTag::Safe,
+            BlockTag::Latest,
+            BlockTag::Pending,
+        ];
+        for tag in tags {
+            let json = serde_json::to_string(&tag).unwrap();
+            let parsed: BlockTag = serde_json::from_str(&json).unwrap();
+            assert_eq!(tag, parsed);
+        }
+    }
+
+    #[test]
+    fn block_number_or_tag_serde_number() {
+        let block = BlockNumberOrTag::Number(U64::from(12345));
+        let json = serde_json::to_string(&block).unwrap();
+        let parsed: BlockNumberOrTag = serde_json::from_str(&json).unwrap();
+        assert_eq!(block, parsed);
+    }
+
+    #[test]
+    fn block_number_or_tag_serde_tag() {
+        let block = BlockNumberOrTag::Tag(BlockTag::Finalized);
+        let json = serde_json::to_string(&block).unwrap();
+        let parsed: BlockNumberOrTag = serde_json::from_str(&json).unwrap();
+        assert_eq!(block, parsed);
+    }
+
+    #[test]
+    fn rpc_block_default() {
+        let block = RpcBlock::default();
+        assert_eq!(block.hash, B256::ZERO);
+        assert_eq!(block.number, U64::ZERO);
+    }
+
+    #[test]
+    fn rpc_transaction_default() {
+        let tx = RpcTransaction::default();
+        assert_eq!(tx.hash, B256::ZERO);
+        assert_eq!(tx.from, Address::ZERO);
+    }
+
+    #[test]
+    fn rpc_transaction_receipt_default() {
+        let receipt = RpcTransactionReceipt::default();
+        assert_eq!(receipt.transaction_hash, B256::ZERO);
+        assert!(receipt.logs.is_empty());
+    }
+
+    #[test]
+    fn rpc_log_default() {
+        let log = RpcLog::default();
+        assert_eq!(log.address, Address::ZERO);
+        assert!(log.topics.is_empty());
+        assert!(!log.removed);
+    }
+
+    #[test]
+    fn sync_status_not_syncing() {
+        let status = SyncStatus::NotSyncing(false);
+        let json = serde_json::to_string(&status).unwrap();
+        assert_eq!(json, "false");
+    }
+
+    #[test]
+    fn sync_status_syncing() {
+        let info = SyncInfo {
+            starting_block: U64::from(0),
+            current_block: U64::from(100),
+            highest_block: U64::from(200),
+        };
+        let status = SyncStatus::Syncing(info);
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(json.contains("startingBlock"));
+        assert!(json.contains("currentBlock"));
+        assert!(json.contains("highestBlock"));
+    }
+}

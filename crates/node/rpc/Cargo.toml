@@ -44,3 +44,4 @@ kora-traits = { path = "../../storage/traits" }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
+serde_json.workspace = true

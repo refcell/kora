@@ -50,6 +50,7 @@ impl std::fmt::Debug for CommonwareRootProvider {
 
 impl CommonwareRootProvider {
     /// Create a new root provider from the given context and config.
+    #[must_use]
     pub const fn new(context: Context, config: QmdbBackendConfig) -> Self {
         Self { context, config }
     }
@@ -69,31 +70,37 @@ impl CommonwareBackend {
     }
 
     /// Get a reference to the accounts store.
+    #[must_use]
     pub const fn accounts(&self) -> &AccountStore {
         &self.accounts
     }
 
     /// Get a mutable reference to the accounts store.
+    #[must_use]
     pub const fn accounts_mut(&mut self) -> &mut AccountStore {
         &mut self.accounts
     }
 
     /// Get a reference to the storage store.
+    #[must_use]
     pub const fn storage(&self) -> &StorageStore {
         &self.storage
     }
 
     /// Get a mutable reference to the storage store.
+    #[must_use]
     pub const fn storage_mut(&mut self) -> &mut StorageStore {
         &mut self.storage
     }
 
     /// Get a reference to the code store.
+    #[must_use]
     pub const fn code(&self) -> &CodeStore {
         &self.code
     }
 
     /// Get a mutable reference to the code store.
+    #[must_use]
     pub const fn code_mut(&mut self) -> &mut CodeStore {
         &mut self.code
     }

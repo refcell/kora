@@ -15,6 +15,7 @@ pub struct StorageKey {
 
 impl StorageKey {
     /// Create a new storage key.
+    #[must_use]
     pub const fn new(address: Address, generation: u64, slot: U256) -> Self {
         Self { address, generation, slot }
     }

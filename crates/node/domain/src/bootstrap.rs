@@ -31,6 +31,7 @@ struct AllocationJson {
 
 impl BootstrapConfig {
     /// Create a new bootstrap configuration.
+    #[must_use]
     pub const fn new(genesis_alloc: Vec<(Address, U256)>, bootstrap_txs: Vec<Tx>) -> Self {
         Self { genesis_alloc, bootstrap_txs }
     }

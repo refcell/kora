@@ -32,6 +32,7 @@ pub struct IndexedStateProvider<S> {
 
 impl<S> IndexedStateProvider<S> {
     /// Creates a new indexed state provider.
+    #[must_use]
     pub const fn new(index: Arc<BlockIndex>, state: S) -> Self {
         Self { index, state }
     }

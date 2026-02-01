@@ -22,11 +22,13 @@ pub struct StateDbAdapter<S> {
 
 impl<S> StateDbAdapter<S> {
     /// Create a new adapter wrapping the given state.
+    #[must_use]
     pub const fn new(state: S) -> Self {
         Self { state }
     }
 
     /// Get the underlying state reference.
+    #[must_use]
     pub const fn state(&self) -> &S {
         &self.state
     }

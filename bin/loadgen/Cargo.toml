@@ -32,7 +32,6 @@ k256.workspace = true
 sha3.workspace = true
 
 reqwest.workspace = true
-kora-domain = { workspace = true, features = ["evm"] }
 
 [lints]
 workspace = true

@@ -85,18 +85,21 @@ impl<C: commonware_cryptography::Signer> TransportConfig<C> {
     }
 
     /// Set the channel backlog size.
+    #[must_use]
     pub const fn with_backlog(mut self, backlog: usize) -> Self {
         self.backlog = backlog;
         self
     }
 
     /// Allow private IP addresses for connections.
+    #[must_use]
     pub const fn with_allow_private_ips(mut self, allow: bool) -> Self {
         self.inner.allow_private_ips = allow;
         self
     }
 
     /// Allow DNS-based peer addresses.
+    #[must_use]
     pub const fn with_allow_dns(mut self, allow: bool) -> Self {
         self.inner.allow_dns = allow;
         self

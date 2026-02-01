@@ -49,6 +49,7 @@ impl Default for TestConfig {
 
 impl TestConfig {
     /// Create a new test configuration with specified validator count.
+    #[must_use]
     pub const fn with_validators(mut self, n: usize) -> Self {
         self.validators = n;
         // BFT threshold: n - f where f = floor((n-1)/3)
@@ -58,24 +59,28 @@ impl TestConfig {
     }
 
     /// Set random seed for reproducibility.
+    #[must_use]
     pub const fn with_seed(mut self, seed: u64) -> Self {
         self.seed = seed;
         self
     }
 
     /// Set network link parameters.
+    #[must_use]
     pub const fn with_link(mut self, link: SimLinkConfig) -> Self {
         self.link = link;
         self
     }
 
     /// Set maximum blocks to finalize before stopping.
+    #[must_use]
     pub const fn with_max_blocks(mut self, blocks: u64) -> Self {
         self.max_blocks = blocks;
         self
     }
 
     /// Set test timeout.
+    #[must_use]
     pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self

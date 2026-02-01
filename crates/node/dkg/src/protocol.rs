@@ -162,8 +162,8 @@ impl ProtocolMessage {
 
     /// Serialize the message to bytes.
     ///
-    /// Format v2 (with session): [0xFF][version=2][session_id: 32 bytes][inner message]
-    /// Format v1 (legacy): [tag < 0xFF][inner message data]
+    /// Format v2 (with session): `[0xFF][version=2]`[session_id: 32 bytes][inner message]
+    /// Format v1 (legacy): `[tag < 0xFF]`[inner message data]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
 

@@ -83,3 +83,173 @@ where
         .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(&s)).map_err(serde::de::Error::custom))
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use commonware_codec::Write as _;
+    use commonware_cryptography::Signer as _;
+
+    use super::*;
+
+    fn create_valid_public_key_bytes() -> Vec<u8> {
+        let private_key =
+            ed25519::PrivateKey::from(ed25519_consensus::SigningKey::from([42u8; 32]));
+        let public_key = private_key.public_key();
+        let mut bytes = Vec::new();
+        public_key.write(&mut bytes);
+        bytes
+    }
+
+    #[test]
+    fn default_consensus_config() {
+        let config = ConsensusConfig::default();
+        assert!(config.validator_key.is_none());
+        assert_eq!(config.threshold, DEFAULT_THRESHOLD);
+        assert!(config.participants.is_empty());
+    }
+
+    #[test]
+    fn default_threshold_constant() {
+        assert_eq!(DEFAULT_THRESHOLD, 2);
+        assert_eq!(default_threshold(), DEFAULT_THRESHOLD);
+    }
+
+    #[test]
+    fn serde_json_roundtrip() {
+        let pk_bytes = create_valid_public_key_bytes();
+        let config = ConsensusConfig {
+            validator_key: Some(PathBuf::from("/path/to/key")),
+            threshold: 3,
+            participants: vec![pk_bytes],
+        };
+        let serialized = serde_json::to_string(&config).expect("serialize");
+        let deserialized: ConsensusConfig = serde_json::from_str(&serialized).expect("deserialize");
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn serde_toml_roundtrip() {
+        let config =
+            ConsensusConfig { validator_key: Some("/path/to/key".into()), ..Default::default() };
+        let serialized = toml::to_string(&config).expect("serialize toml");
+        let deserialized: ConsensusConfig = toml::from_str(&serialized).expect("deserialize toml");
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn serde_defaults_applied() {
+        let config: ConsensusConfig = serde_json::from_str("{}").expect("deserialize");
+        assert!(config.validator_key.is_none());
+        assert_eq!(config.threshold, DEFAULT_THRESHOLD);
+        assert!(config.participants.is_empty());
+    }
+
+    #[test]
+    fn serde_partial_threshold() {
+        let config: ConsensusConfig =
+            serde_json::from_str(r#"{"threshold": 7}"#).expect("deserialize");
+        assert_eq!(config.threshold, 7);
+        assert!(config.validator_key.is_none());
+        assert!(config.participants.is_empty());
+    }
+
+    #[test]
+    fn serde_partial_validator_key() {
+        let config: ConsensusConfig =
+            serde_json::from_str(r#"{"validator_key": "/etc/key"}"#).expect("deserialize");
+        assert_eq!(config.validator_key, Some(PathBuf::from("/etc/key")));
+        assert_eq!(config.threshold, DEFAULT_THRESHOLD);
+    }
+
+    #[test]
+    fn deserialize_participants_with_0x_prefix() {
+        let pk_bytes = create_valid_public_key_bytes();
+        let hex_with_prefix = format!("0x{}", hex::encode(&pk_bytes));
+        let json = format!(r#"{{"participants": ["{}"]}}"#, hex_with_prefix);
+
+        let config: ConsensusConfig = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(config.participants.len(), 1);
+        assert_eq!(config.participants[0], pk_bytes);
+    }
+
+    #[test]
+    fn deserialize_participants_without_prefix() {
+        let pk_bytes = create_valid_public_key_bytes();
+        let hex_without_prefix = hex::encode(&pk_bytes);
+        let json = format!(r#"{{"participants": ["{}"]}}"#, hex_without_prefix);
+
+        let config: ConsensusConfig = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(config.participants.len(), 1);
+        assert_eq!(config.participants[0], pk_bytes);
+    }
+
+    #[test]
+    fn build_validator_set_empty() {
+        let config = ConsensusConfig::default();
+        let result = config.build_validator_set().expect("build empty set");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn build_validator_set_single_key() {
+        let pk_bytes = create_valid_public_key_bytes();
+        let config = ConsensusConfig { participants: vec![pk_bytes], ..Default::default() };
+        let result = config.build_validator_set().expect("build validator set");
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn build_validator_set_multiple_keys() {
+        let keys: Vec<_> = (1..=3u8)
+            .map(|i| {
+                let pk = ed25519::PrivateKey::from(ed25519_consensus::SigningKey::from([i; 32]));
+                let mut bytes = Vec::new();
+                pk.public_key().write(&mut bytes);
+                bytes
+            })
+            .collect();
+
+        let config = ConsensusConfig { participants: keys, threshold: 2, ..Default::default() };
+
+        let result = config.build_validator_set().expect("build validator set");
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn build_validator_set_invalid_length() {
+        let config = ConsensusConfig { participants: vec![vec![0u8; 16]], ..Default::default() };
+        let result = config.build_validator_set();
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ConfigError::InvalidParticipantKeyLength(16)));
+    }
+
+    #[test]
+    fn participants_hex_serialization() {
+        let pk_bytes = create_valid_public_key_bytes();
+        let expected_hex = hex::encode(&pk_bytes);
+        let config = ConsensusConfig { participants: vec![pk_bytes], ..Default::default() };
+
+        let serialized = serde_json::to_string(&config).expect("serialize");
+        assert!(serialized.contains(&expected_hex));
+    }
+
+    #[test]
+    fn consensus_config_clone_and_eq() {
+        let pk_bytes = create_valid_public_key_bytes();
+        let config = ConsensusConfig {
+            validator_key: Some(PathBuf::from("/custom/path")),
+            threshold: 10,
+            participants: vec![pk_bytes],
+        };
+        assert_eq!(config, config.clone());
+        assert_ne!(config, ConsensusConfig::default());
+    }
+
+    #[test]
+    fn consensus_config_debug() {
+        let config = ConsensusConfig::default();
+        let debug = format!("{:?}", config);
+        assert!(debug.contains("ConsensusConfig"));
+        assert!(debug.contains("threshold"));
+    }
+}

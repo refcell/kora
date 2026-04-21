@@ -150,9 +150,7 @@ impl Cli {
             .map_err(|e| eyre::eyre!("Failed to load genesis: {}", e))?;
         tracing::info!(allocations = bootstrap.genesis_alloc.len(), "Loaded genesis configuration");
 
-        // Create RPC state that will be updated by consensus
-        let rpc_port = 8545 + dkg_output.share_index as u16;
-        let rpc_addr: std::net::SocketAddr = format!("0.0.0.0:{}", rpc_port).parse()?;
+        let rpc_addr: std::net::SocketAddr = "0.0.0.0:8545".parse()?;
         let node_state = NodeState::new(config.chain_id, dkg_output.share_index);
 
         let runner = ProductionRunner::new(

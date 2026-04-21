@@ -120,10 +120,36 @@ pub(crate) fn run(args: SetupArgs) -> Result<()> {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs(),
-        allocations: vec![GenesisAllocation {
-            address: "0x0000000000000000000000000000000000000001".to_string(),
-            balance: "1000000000000000000000000".to_string(),
-        }],
+        allocations: vec![
+            GenesisAllocation {
+                address: "0x0000000000000000000000000000000000000001".to_string(),
+                balance: "1000000000000000000000000".to_string(),
+            },
+            GenesisAllocation {
+                address: "0xEb1Ba7Fc58b3416361a0EE07d140c91410c0AA8c".to_string(),
+                balance: "1000000000000000000000000".to_string(),
+            },
+            GenesisAllocation {
+                address: "0xa883208a74152107475a3Fa6b0c21121894B647F".to_string(),
+                balance: "1000000000000000000000000".to_string(),
+            },
+            GenesisAllocation {
+                address: "0x105be5081ceba05be11976150abc277ee365fc3f".to_string(),
+                balance: "1000000000000000000000000".to_string(),
+            },
+            GenesisAllocation {
+                address: "0x30b68d56AE9173566055a69ee7cCB0E755B6a201".to_string(),
+                balance: "1000000000000000000000000".to_string(),
+            },
+            GenesisAllocation {
+                address: "0xDdE169289B51C512268D0b11EE2b15160b1e1793".to_string(),
+                balance: "1000000000000000000000000".to_string(),
+            },
+            GenesisAllocation {
+                address: "0xde738C4084dDE5083A7959235Fd230e27eAFC63B".to_string(),
+                balance: "1000000000000000000000000".to_string(),
+            },
+        ],
     };
     let genesis_path = args.output_dir.join("genesis.json");
     fs::write(&genesis_path, serde_json::to_string_pretty(&genesis)?)?;

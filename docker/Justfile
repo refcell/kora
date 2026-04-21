@@ -41,7 +41,7 @@ status:
     @echo ""
     @echo "Endpoints:"
     @echo "  P2P:        localhost:30400-30403"
-    @echo "  RPC:        localhost:8540-8543 (disabled)"
+    @echo "  RPC:        localhost:8545-8548"
     @echo "  Prometheus: http://localhost:9090"
     @echo "  Grafana:    http://localhost:3000"
 

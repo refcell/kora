@@ -71,7 +71,8 @@ fn build_cors_layer(config: &CorsConfig) -> CorsLayer {
 /// RPC server for exposing node status via HTTP and Ethereum JSON-RPC.
 pub struct RpcServer<S: StateProvider = NoopStateProvider> {
     state: NodeState,
-    addr: SocketAddr,
+    http_addr: SocketAddr,
+    jsonrpc_addr: SocketAddr,
     chain_id: u64,
     tx_submit: Option<TxSubmitCallback>,
     state_provider: S,
@@ -83,19 +84,28 @@ impl<S: StateProvider> std::fmt::Debug for RpcServer<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RpcServer")
             .field("state", &self.state)
-            .field("addr", &self.addr)
+            .field("http_addr", &self.http_addr)
+            .field("jsonrpc_addr", &self.jsonrpc_addr)
             .field("chain_id", &self.chain_id)
             .field("tx_submit", &self.tx_submit.is_some())
             .finish()
     }
 }
 
+/// Compute a default HTTP address by incrementing the port of the given address.
+fn default_http_addr(jsonrpc_addr: SocketAddr) -> SocketAddr {
+    SocketAddr::new(jsonrpc_addr.ip(), jsonrpc_addr.port() + 1)
+}
+
 impl RpcServer<NoopStateProvider> {
     /// Create a new RPC server with default (noop) state provider.
+    ///
+    /// The JSON-RPC server binds to `addr`; the HTTP status server binds to `addr.port() + 1`.
     pub fn new(state: NodeState, addr: SocketAddr) -> Self {
         Self {
             state,
-            addr,
+            http_addr: default_http_addr(addr),
+            jsonrpc_addr: addr,
             chain_id: 1,
             tx_submit: None,
             state_provider: NoopStateProvider,
@@ -108,7 +118,8 @@ impl RpcServer<NoopStateProvider> {
     pub fn with_chain_id(state: NodeState, addr: SocketAddr, chain_id: u64) -> Self {
         Self {
             state,
-            addr,
+            http_addr: default_http_addr(addr),
+            jsonrpc_addr: addr,
             chain_id,
             tx_submit: None,
             state_provider: NoopStateProvider,
@@ -128,7 +139,8 @@ impl<S: StateProvider + Clone + 'static> RpcServer<S> {
     ) -> Self {
         Self {
             state,
-            addr,
+            http_addr: default_http_addr(addr),
+            jsonrpc_addr: addr,
             chain_id,
             tx_submit: None,
             state_provider,
@@ -162,7 +174,8 @@ impl<S: StateProvider + Clone + 'static> RpcServer<S> {
     pub fn from_config(state: NodeState, config: RpcServerConfig, state_provider: S) -> Self {
         Self {
             state,
-            addr: config.http_addr,
+            http_addr: config.http_addr,
+            jsonrpc_addr: config.jsonrpc_addr,
             chain_id: config.chain_id,
             tx_submit: None,
             state_provider,
@@ -175,8 +188,8 @@ impl<S: StateProvider + Clone + 'static> RpcServer<S> {
     ///
     /// This spawns background tasks for both HTTP and JSON-RPC servers and returns immediately.
     pub fn start(self) -> RpcServerHandle {
-        let http_addr = self.addr;
-        let jsonrpc_addr = self.addr;
+        let http_addr = self.http_addr;
+        let jsonrpc_addr = self.jsonrpc_addr;
         let node_state = Arc::new(self.state);
         let node_state_for_jsonrpc = Arc::clone(&node_state);
         let chain_id = self.chain_id;

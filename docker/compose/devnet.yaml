@@ -177,9 +177,6 @@ services:
   validator-node0:
     <<: *validator-common
     hostname: node0
-    depends_on:
-      init-config:
-        condition: service_completed_successfully
     entrypoint: ["/scripts/entrypoint.sh", "validator"]
     volumes:
       - shared_config:/shared:ro
@@ -199,8 +196,6 @@ services:
     <<: *validator-common
     hostname: node1
     depends_on:
-      init-config:
-        condition: service_completed_successfully
       validator-node0:
         condition: service_healthy
     entrypoint: ["/scripts/entrypoint.sh", "validator"]
@@ -216,15 +211,13 @@ services:
       - HEALTHCHECK_MODE=ready
     ports:
       - "30401:30303"
-      - "8546:8546"
+      - "8546:8545"
       - "9001:9002"
 
   validator-node2:
     <<: *validator-common
     hostname: node2
     depends_on:
-      init-config:
-        condition: service_completed_successfully
       validator-node0:
         condition: service_healthy
     entrypoint: ["/scripts/entrypoint.sh", "validator"]
@@ -240,15 +233,13 @@ services:
       - HEALTHCHECK_MODE=ready
     ports:
       - "30402:30303"
-      - "8547:8547"
+      - "8547:8545"
       - "9002:9002"
 
   validator-node3:
     <<: *validator-common
     hostname: node3
     depends_on:
-      init-config:
-        condition: service_completed_successfully
       validator-node0:
         condition: service_healthy
     entrypoint: ["/scripts/entrypoint.sh", "validator"]
@@ -264,7 +255,7 @@ services:
       - HEALTHCHECK_MODE=ready
     ports:
       - "30403:30303"
-      - "8548:8548"
+      - "8548:8545"
       - "9003:9002"
 
   prometheus:

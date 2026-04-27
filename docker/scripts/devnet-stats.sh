@@ -86,7 +86,7 @@ render() {
         if [[ "$status" != "{}" ]]; then
             # Parse with single jq call
             local parsed
-            parsed=$(echo "$status" | jq -r '[.uptime_secs // 0, .current_view // 0, .finalized_count // 0, .nullified_count // 0, .proposed_count // 0, .is_leader // false] | @tsv' 2>/dev/null)
+            parsed=$(echo "$status" | jq -r '[.uptimeSecs // .uptime_secs // 0, .currentView // .current_view // 0, .finalizedCount // .finalized_count // 0, .nullifiedCount // .nullified_count // 0, .proposedCount // .proposed_count // 0, .isLeader // .is_leader // false] | @tsv' 2>/dev/null)
             
             if [[ -n "$parsed" ]]; then
                 read -r uptime view finalized nullified proposed leader <<< "$parsed"
@@ -100,7 +100,7 @@ render() {
                 [[ $uptime -gt $max_uptime ]] && max_uptime=$uptime
                 [[ $view -gt $max_view ]] && max_view=$view
                 total_finalized=$finalized
-                ((healthy_count++))
+                ((++healthy_count))
                 
                 local uptime_str=$(format_uptime "$uptime")
                 local leader_str="-"
@@ -125,7 +125,7 @@ render() {
         else
             printf "│ ${CYAN}%-5s${NC} │ ${RED}offline${NC}  │ -          │ -        │ -          │ -          │ -          │ -          │   -    │\n" "$i"
         fi
-        ((i++))
+        ((++i))
     done <<< "$all_status"
     
     echo -e "└───────┴──────────┴────────────┴──────────┴────────────┴────────────┴────────────┴────────────┴────────┘"

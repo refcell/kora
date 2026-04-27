@@ -131,6 +131,16 @@ impl LedgerView {
         self.genesis_block.clone()
     }
 
+    /// Return a cloneable handle to the underlying QMDB state.
+    ///
+    /// The returned handle shares the same backing store and can be used
+    /// for read-only queries (balance, nonce, code, storage) without
+    /// acquiring the ledger mutex.
+    pub async fn qmdb_state(&self) -> QmdbState {
+        let inner = self.inner.lock().await;
+        inner.qmdb.state()
+    }
+
     /// Submit a transaction into the mempool.
     pub async fn submit_tx(&self, tx: Tx) -> bool {
         let inner = self.inner.lock().await;

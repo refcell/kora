@@ -3642,6 +3642,7 @@ dependencies = [
  "kora-dkg",
  "kora-domain",
  "kora-executor",
+ "kora-indexer",
  "kora-ledger",
  "kora-marshal",
  "kora-overlay",

@@ -154,16 +154,8 @@ impl ProductionRunner {
         use commonware_runtime::Runner;
         use kora_transport::NetworkConfigExt;
 
-        let rpc_config = self.rpc_config.clone();
-
         let executor = tokio::Runner::default();
         executor.start(|context| async move {
-            // Start RPC server if configured
-            if let Some((state, addr)) = rpc_config {
-                let rpc = kora_rpc::RpcServer::new(state, addr);
-                drop(rpc.start());
-            }
-
             let validator_key = config
                 .validator_key()
                 .map_err(|e| anyhow::anyhow!("failed to load validator key: {}", e))?;
@@ -209,6 +201,21 @@ impl NodeRunner for ProductionRunner {
         )
         .await
         .context("init qmdb")?;
+
+        if let Some((node_state, addr)) = &self.rpc_config {
+            let qmdb_state = state.qmdb_state().await;
+            let block_index = Arc::new(kora_indexer::BlockIndex::new());
+            let indexed_provider =
+                kora_rpc::IndexedStateProvider::new(block_index, qmdb_state);
+            let rpc = kora_rpc::RpcServer::with_state_provider(
+                node_state.clone(),
+                *addr,
+                self.chain_id,
+                indexed_provider,
+            );
+            drop(rpc.start());
+            info!(addr = %addr, "RPC server started with live state provider");
+        }
 
         let ledger = LedgerService::new(state.clone());
         spawn_ledger_observers(ledger.clone(), context.clone());

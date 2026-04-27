@@ -13,6 +13,7 @@ kora-consensus.workspace = true
 kora-domain.workspace = true
 kora-dkg.workspace = true
 kora-executor.workspace = true
+kora-indexer.workspace = true
 kora-ledger.workspace = true
 kora-marshal.workspace = true
 kora-overlay.workspace = true

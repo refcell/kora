@@ -15,6 +15,8 @@ NC='\033[0m'
 REFRESH_INTERVAL=${1:-0.3}
 CHAIN_ID="${CHAIN_ID:-1337}"
 RPC_PORTS=(8545 8546 8547 8548)
+FOLLOWER_SERVICE="secondary-node0"
+FOLLOWER_P2P_PORT=30500
 
 cleanup() {
     tput cnorm
@@ -53,6 +55,17 @@ fetch_all_statuses() {
     rm -rf "$tmpdir"
 }
 
+fetch_follower_info() {
+    docker compose -f compose/devnet.yaml ps --format json 2>/dev/null | \
+        jq -r "select(.Service == \"$FOLLOWER_SERVICE\") | [
+            .Health // .State // \"unknown\",
+            .State // \"unknown\",
+            (.RunningFor // \"-\"),
+            ([.Publishers[]? | select(.TargetPort == 30303 and .PublishedPort != 0) | .PublishedPort] | unique | join(\",\")),
+            .Name // \"$FOLLOWER_SERVICE\"
+        ] | @tsv" 2>/dev/null || true
+}
+
 render() {
     tput cup 0 0
     local now=$(date "+%H:%M:%S")
@@ -75,6 +88,12 @@ render() {
     local total_finalized=0
     local max_view=0
     local max_throughput=0
+    local follower_status="offline"
+    local follower_color=$RED
+    local follower_state="-"
+    local follower_uptime="-"
+    local follower_p2p="$FOLLOWER_P2P_PORT"
+    local follower_container="$FOLLOWER_SERVICE"
     
     # Fetch all statuses in parallel
     local all_status
@@ -137,6 +156,39 @@ render() {
         fi
         ((++i))
     done <<< "$all_status"
+
+    local follower_info
+    follower_info=$(fetch_follower_info)
+    if [[ -n "$follower_info" ]]; then
+        local follower_health_value
+        IFS=$'\t' read -r follower_health_value follower_state follower_uptime follower_p2p follower_container <<< "$follower_info"
+        follower_uptime="${follower_uptime% ago}"
+        follower_p2p="${follower_p2p:-$FOLLOWER_P2P_PORT}"
+
+        case "$follower_health_value" in
+            healthy)
+                follower_status="healthy"
+                follower_color=$GREEN
+                ;;
+            running)
+                follower_status="running"
+                follower_color=$GREEN
+                ;;
+            starting)
+                follower_status="starting"
+                follower_color=$YELLOW
+                ;;
+            *)
+                follower_status="${follower_health_value:-${follower_state:-unknown}}"
+                follower_color=$YELLOW
+                ;;
+        esac
+    fi
+
+    local follower_table_uptime="${follower_uptime:0:10}"
+    local follower_network="P2P ${follower_p2p:-none}"
+    printf "│ ${CYAN}%-5s${NC} │ ${follower_color}%-8s${NC} │ %-10s │ %-8s │ %-10s │ %-10s │ %-10s │ %-10s │   -    │\n" \
+        "f0" "$follower_status" "$follower_table_uptime" "follower" "-" "-" "-" "$follower_network"
     
     echo -e "└───────┴──────────┴────────────┴──────────┴────────────┴────────────┴────────────┴────────────┴────────┘"
     
@@ -160,15 +212,20 @@ render() {
         throughput_str=$(awk "BEGIN {printf \"%.2f b/s\", $max_throughput / 100}")
     fi
     
-    echo -e "  ${DIM}Consensus:${NC} ${health_color}${healthy_count}/4${NC}  │  ${DIM}RPC:${NC} ${GREEN}${rpc_count}/4${NC}  │  ${DIM}Stalled:${NC} ${YELLOW}${stalled_count}${NC}  │  ${DIM}Threshold:${NC} $threshold  │  ${DIM}View:${NC} ${CYAN}$max_view${NC}  │  ${DIM}Finalized:${NC} ${GREEN}$total_finalized${NC}  │  ${DIM}Throughput:${NC} ${CYAN}$throughput_str${NC}  │  ${DIM}Uptime:${NC} $uptime_str"
+    echo -e "  ${DIM}Consensus:${NC} ${health_color}${healthy_count}/4${NC}  │  ${DIM}RPC:${NC} ${GREEN}${rpc_count}/4${NC}  │  ${DIM}Follower:${NC} ${follower_color}${follower_status}${NC}  │  ${DIM}Stalled:${NC} ${YELLOW}${stalled_count}${NC}  │  ${DIM}Threshold:${NC} $threshold  │  ${DIM}View:${NC} ${CYAN}$max_view${NC}  │  ${DIM}Finalized:${NC} ${GREEN}$total_finalized${NC}  │  ${DIM}Throughput:${NC} ${CYAN}$throughput_str${NC}  │  ${DIM}Uptime:${NC} $uptime_str"
+
+    echo ""
+    echo -e "${BOLD}${CYAN}Follower Node${NC}"
+    echo -e "  ${DIM}Node:${NC} ${CYAN}f0${NC}  │  ${DIM}Role:${NC} secondary  │  ${DIM}Service:${NC} $FOLLOWER_SERVICE  │  ${DIM}Container:${NC} $follower_container"
+    echo -e "  ${DIM}Health:${NC} ${follower_color}${follower_status}${NC}  │  ${DIM}State:${NC} $follower_state  │  ${DIM}Uptime:${NC} $follower_uptime  │  ${DIM}P2P:${NC} ${follower_p2p:-none}  │  ${DIM}RPC:${NC} none"
     
     # Endpoints
     echo ""
     echo -e "${BOLD}${CYAN}Endpoints${NC}"
-    echo -e "  ${DIM}P2P:${NC} 30400-30403    ${DIM}RPC:${NC} 8545-8548    ${DIM}Metrics:${NC} 9000-9003"
+    echo -e "  ${DIM}P2P:${NC} 30400-30403    ${DIM}Follower P2P:${NC} $FOLLOWER_P2P_PORT    ${DIM}RPC:${NC} 8545-8548    ${DIM}Metrics:${NC} 9000-9003"
     
     # Clear extra lines
-    for _ in {1..3}; do
+    for _ in {1..5}; do
         printf "%-90s\n" ""
     done
 }

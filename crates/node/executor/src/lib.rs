@@ -21,7 +21,7 @@ mod outcome;
 pub use outcome::{ExecutionOutcome, ExecutionReceipt};
 
 mod revm;
-pub use revm::{RevmExecutor, calculate_base_fee};
+pub use revm::{CallParams, RevmExecutor, calculate_base_fee};
 
 mod traits;
 pub use traits::BlockExecutor;

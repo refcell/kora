@@ -20,6 +20,7 @@ tower-http = { version = "0.6", features = ["cors"] }
 jsonrpsee = { version = "0.24", features = ["server", "macros"] }
 
 # Alloy types
+alloy-consensus.workspace = true
 alloy-primitives = { workspace = true, features = ["serde"] }
 
 # Async
@@ -39,6 +40,7 @@ tracing.workspace = true
 parking_lot = "0.12"
 
 # Kora crates
+kora-executor = { path = "../executor" }
 kora-indexer = { path = "../../storage/indexer" }
 kora-traits = { path = "../../storage/traits" }
 

@@ -267,6 +267,8 @@ mod tests {
 
         assert_eq!(cloned.rate_limit.requests_per_second, 250);
         assert_eq!(cloned.max_connections, 75);
+        // Reference `original` after the clone so the lint sees both values used.
+        assert_eq!(original.rate_limit.requests_per_second, 250);
     }
 
     #[test]
@@ -276,6 +278,7 @@ mod tests {
 
         assert_eq!(cloned.allowed_origins, vec!["*"]);
         assert_eq!(cloned.max_age, 86400);
+        assert_eq!(original.allowed_origins, vec!["*"]);
     }
 
     #[test]
@@ -285,6 +288,7 @@ mod tests {
 
         assert_eq!(cloned.requests_per_second, 500);
         assert_eq!(cloned.burst_size, 1000);
+        assert_eq!(original.requests_per_second, 500);
     }
 
     #[test]

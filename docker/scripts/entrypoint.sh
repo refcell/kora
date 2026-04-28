@@ -82,6 +82,34 @@ case "$MODE" in
             --chain-id "$CHAIN_ID" \
             "$@"
         ;;
+
+    secondary)
+        log "Running secondary peer mode..."
+
+        [[ -f "${SHARED_DIR}/peers.json" ]] || error "peers.json not found"
+        [[ -f "${DATA_DIR}/validator.key" ]] || error "validator.key not found"
+
+        touch "${DATA_DIR}/.ready"
+
+        if [[ "$IS_BOOTSTRAP" != "true" && -n "$BOOTSTRAP_PEERS" ]]; then
+            BOOTSTRAP_HOST=$(echo "$BOOTSTRAP_PEERS" | cut -d: -f1)
+            BOOTSTRAP_PORT=$(echo "$BOOTSTRAP_PEERS" | cut -d: -f2)
+
+            log "Waiting for bootstrap peer ${BOOTSTRAP_HOST}:${BOOTSTRAP_PORT}..."
+            timeout=120
+            while ! nc -z "$BOOTSTRAP_HOST" "$BOOTSTRAP_PORT" 2>/dev/null; do
+                timeout=$((timeout - 1))
+                [[ $timeout -le 0 ]] && error "Timeout waiting for bootstrap peer"
+                sleep 1
+            done
+        fi
+
+        exec /usr/local/bin/kora secondary \
+            --data-dir "$DATA_DIR" \
+            --peers "${SHARED_DIR}/peers.json" \
+            --chain-id "$CHAIN_ID" \
+            "$@"
+        ;;
         
     *)
         exec "$MODE" "$@"

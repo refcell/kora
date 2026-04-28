@@ -33,7 +33,7 @@ reset:
 restart: down devnet
 
 restart-validators:
-    docker compose -f compose/devnet.yaml restart validator-node0 validator-node1 validator-node2 validator-node3
+    docker compose -f compose/devnet.yaml restart validator-node0 validator-node1 validator-node2 validator-node3 secondary-node0
 
 status:
     @echo ""
@@ -41,12 +41,13 @@ status:
     @echo ""
     @echo "Endpoints:"
     @echo "  P2P:        localhost:30400-30403"
+    @echo "  Secondary:  localhost:30500"
     @echo "  RPC:        localhost:8545-8548"
     @echo "  Prometheus: http://localhost:9090"
     @echo "  Grafana:    http://localhost:3000"
 
 logs:
-    docker compose -f compose/devnet.yaml logs -f validator-node0 validator-node1 validator-node2 validator-node3
+    docker compose -f compose/devnet.yaml logs -f validator-node0 validator-node1 validator-node2 validator-node3 secondary-node0
 
 logs-dkg:
     docker compose -f compose/devnet.yaml --profile interactive-dkg logs -f dkg-node0 dkg-node1 dkg-node2 dkg-node3
@@ -87,7 +88,7 @@ redo-dkg:
     done
     
     docker compose -f compose/devnet.yaml --profile interactive-dkg stop dkg-node0 dkg-node1 dkg-node2 dkg-node3 2>/dev/null || true
-    docker compose -f compose/devnet.yaml up -d validator-node0 validator-node1 validator-node2 validator-node3
+    docker compose -f compose/devnet.yaml up -d validator-node0 validator-node1 validator-node2 validator-node3 secondary-node0
     echo "DKG complete. Validators restarted."
 
 lint:

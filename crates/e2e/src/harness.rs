@@ -10,14 +10,14 @@ use alloy_primitives::{Address, B256, U256};
 use anyhow::Context as _;
 use commonware_consensus::{
     Reporter, Reporters,
-    application::marshaled::Marshaled,
+    marshal::standard::{Inline, Standard},
     simplex::{self, elector::Random, types::Finalization},
     types::{Epoch, FixedEpocher, ViewDelta},
 };
 use commonware_cryptography::{bls12381::primitives::variant::MinSig, ed25519};
 use commonware_p2p::{Manager as _, simulated};
 use commonware_parallel::Sequential;
-use commonware_runtime::{Clock, Metrics, Runner as _, Spawner, buffer::PoolRef, tokio};
+use commonware_runtime::{Clock, Metrics, Runner as _, Spawner, buffer::paged::CacheRef, tokio};
 use commonware_utils::{NZU64, NZUsize, TryCollect as _, ordered::Set};
 use futures::{StreamExt as _, channel::mpsc};
 use kora_crypto::{ThresholdScheme, threshold_schemes};
@@ -209,13 +209,13 @@ async fn start_network(
         simulated::Config {
             max_size: MAX_MSG_SIZE as u32,
             disconnect_on_block: true,
-            tracked_peer_sets: None,
+            tracked_peer_sets: NZUsize!(4),
         },
     );
     network.start();
 
     let control = SimControl::new(oracle);
-    control.manager().update(0, participants).await;
+    control.manager().track(0, participants).await;
     control
 }
 
@@ -350,7 +350,7 @@ async fn start_single_node(
 
     // Create marshaled application
     let epocher = FixedEpocher::new(NZU64!(EPOCH_LENGTH));
-    let marshaled = Marshaled::new(
+    let marshaled = Inline::new(
         context.with_label(&format!("marshaled_{index}")),
         app,
         marshal_mailbox.clone(),
@@ -432,13 +432,13 @@ async fn start_marshal<M, R>(
     control: simulated::Control<Peer, SimContext>,
     manager: M,
     scheme: ThresholdScheme,
-    buffer_pool: PoolRef,
+    buffer_pool: CacheRef,
     block_codec_config: BlockCfg,
     blocks: (simulated::Sender<Peer, SimContext>, simulated::Receiver<Peer>),
     backfill: (simulated::Sender<Peer, SimContext>, simulated::Receiver<Peer>),
     application: R,
     partition_prefix: &str,
-) -> anyhow::Result<commonware_consensus::marshal::Mailbox<ThresholdScheme, Block>>
+) -> anyhow::Result<commonware_consensus::marshal::core::Mailbox<ThresholdScheme, Standard<Block>>>
 where
     M: commonware_p2p::Manager<PublicKey = Peer>,
     R: Reporter<Activity = commonware_consensus::marshal::Update<Block>> + Send + 'static,
@@ -472,14 +472,15 @@ where
     let resolver = PeerInitializer::init::<_, _, _, Block, _, _, _>(
         &ctx,
         public_key.clone(),
-        manager,
+        manager.clone(),
         control,
         backfill,
     );
 
-    let (broadcast_engine, buffer) = BroadcastInitializer::init::<_, PublicKey, Block>(
+    let (broadcast_engine, buffer) = BroadcastInitializer::init::<_, PublicKey, Block, M>(
         ctx.with_label("broadcast"),
         public_key,
+        manager,
         block_codec_config,
     );
     broadcast_engine.start(blocks);
@@ -647,7 +648,8 @@ use std::collections::BTreeSet;
 
 use alloy_primitives::Bytes;
 use commonware_consensus::{
-    Application, Block as _, VerifyingApplication, marshal::ingress::mailbox::AncestorStream,
+    Application, Block as _, VerifyingApplication,
+    marshal::ancestry::{AncestorStream, BlockProvider},
     simplex::types::Context,
 };
 use commonware_cryptography::{Committable as _, certificate::Scheme as CertScheme};
@@ -829,10 +831,10 @@ where
         async move { self.ledger.genesis_block() }
     }
 
-    fn propose(
+    fn propose<A: BlockProvider<Block = Self::Block>>(
         &mut self,
         _context: (Env, Self::Context),
-        mut ancestry: AncestorStream<Self::SigningScheme, Self::Block>,
+        mut ancestry: AncestorStream<A, Self::Block>,
     ) -> impl std::future::Future<Output = Option<Self::Block>> + Send {
         async move {
             let parent = ancestry.next().await?;
@@ -846,10 +848,10 @@ where
     Env: Rng + Spawner + Metrics + Clock,
     S: CertScheme + Send + Sync + 'static,
 {
-    fn verify(
+    fn verify<A: BlockProvider<Block = Self::Block>>(
         &mut self,
         _context: (Env, Self::Context),
-        mut ancestry: AncestorStream<Self::SigningScheme, Self::Block>,
+        mut ancestry: AncestorStream<A, Self::Block>,
     ) -> impl std::future::Future<Output = bool> + Send {
         async move {
             let mut blocks_to_verify = Vec::new();

@@ -47,7 +47,7 @@ impl<C: Signer> TransportConfig<C> {
     /// let transport = config.build(context)?;
     ///
     /// // Register validators with oracle
-    /// transport.oracle.update(0, validators).await;
+    /// transport.oracle.track(0, validators).await;
     ///
     /// // Pass channels to consumers
     /// engine.start(

@@ -13,10 +13,10 @@ use commonware_consensus::{
     types::{Epoch, FixedEpocher, ViewDelta},
 };
 use commonware_cryptography::{bls12381::primitives::variant::MinSig, ed25519};
-use commonware_p2p::Manager;
+use commonware_p2p::{Manager, TrackedPeers};
 use commonware_parallel::Sequential;
 use commonware_runtime::{Metrics as _, Spawner, buffer::paged::CacheRef, tokio};
-use commonware_utils::{NZU64, NZUsize, acknowledgement::Exact};
+use commonware_utils::{NZU64, NZUsize, acknowledgement::Exact, ordered::Set};
 use futures::StreamExt;
 use kora_domain::{Block, BlockCfg, BootstrapConfig, ConsensusDigest, LedgerEvent, TxCfg};
 use kora_executor::{BlockContext, RevmExecutor};
@@ -123,6 +123,8 @@ pub struct ProductionRunner {
     pub partition_prefix: String,
     /// Optional RPC configuration (state, bind address).
     pub rpc_config: Option<(kora_rpc::NodeState, std::net::SocketAddr)>,
+    /// Secondary peers authorized to follow validator traffic without participating in consensus.
+    pub secondary_peers: Vec<Peer>,
 }
 
 impl ProductionRunner {
@@ -140,6 +142,7 @@ impl ProductionRunner {
             bootstrap,
             partition_prefix: PARTITION_PREFIX.to_string(),
             rpc_config: None,
+            secondary_peers: Vec::new(),
         }
     }
 
@@ -147,6 +150,13 @@ impl ProductionRunner {
     #[must_use]
     pub fn with_rpc(mut self, state: kora_rpc::NodeState, addr: std::net::SocketAddr) -> Self {
         self.rpc_config = Some((state, addr));
+        self
+    }
+
+    /// Configure secondary peers that should be tracked by the P2P oracle.
+    #[must_use]
+    pub fn with_secondary_peers(mut self, peers: Vec<Peer>) -> Self {
+        self.secondary_peers = peers;
         self
     }
 }
@@ -190,8 +200,14 @@ impl NodeRunner for ProductionRunner {
         info!(chain_id = self.chain_id, "Starting production validator");
 
         let validators = self.scheme.participants().clone();
-        transport.oracle.track(0, validators).await;
-        info!(count = self.scheme.participants().len(), "Registered validators with oracle");
+        let secondary = Set::from_iter_dedup(self.secondary_peers.iter().cloned());
+        let secondary_count = secondary.len();
+        transport.oracle.track(0, TrackedPeers::new(validators, secondary)).await;
+        info!(
+            validators = self.scheme.participants().len(),
+            secondary_peers = secondary_count,
+            "Registered primary and secondary peers with oracle"
+        );
 
         let page_cache = default_page_cache(&context);
         let block_cfg = block_codec_cfg();

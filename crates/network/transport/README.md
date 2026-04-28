@@ -38,7 +38,7 @@ let (cert_sender, cert_receiver) = transport.simplex.certs;
 let (block_sender, block_receiver) = transport.marshal.blocks;
 
 // Register validator set
-transport.oracle.update(0, validators).await;
+transport.oracle.track(0, validators).await;
 ```
 
 ## License

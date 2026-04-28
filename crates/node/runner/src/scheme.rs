@@ -1,9 +1,13 @@
 use std::{num::NonZeroU32, path::Path};
 
 use commonware_codec::{Read, ReadExt};
-use commonware_consensus::simplex::scheme::bls12381_threshold;
+use commonware_consensus::simplex::scheme::bls12381_threshold::vrf as bls12381_threshold;
 use commonware_cryptography::{
-    bls12381::primitives::{group::Share, sharing::Sharing, variant::MinSig},
+    bls12381::primitives::{
+        group::Share,
+        sharing::{ModeVersion, Sharing},
+        variant::MinSig,
+    },
     ed25519,
 };
 use commonware_utils::ordered::Set;
@@ -33,8 +37,11 @@ pub fn load_threshold_scheme(data_dir: &Path) -> anyhow::Result<ThresholdScheme>
 
     let participants_set = Set::from_iter_dedup(participants);
 
-    let group_poly = Sharing::<MinSig>::read_cfg(&mut output.public_polynomial.as_slice(), &n_cfg)
-        .map_err(|e| anyhow::anyhow!("failed to decode public polynomial: {:?}", e))?;
+    let group_poly = Sharing::<MinSig>::read_cfg(
+        &mut output.public_polynomial.as_slice(),
+        &(n_cfg, ModeVersion::v0()),
+    )
+    .map_err(|e| anyhow::anyhow!("failed to decode public polynomial: {:?}", e))?;
 
     let share = Share::read_cfg(&mut output.share_secret.as_slice(), &())
         .map_err(|e| anyhow::anyhow!("failed to decode share: {:?}", e))?;

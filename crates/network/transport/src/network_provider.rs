@@ -4,7 +4,9 @@ use std::fmt;
 
 use commonware_cryptography::Signer;
 use commonware_p2p::authenticated::discovery;
-use commonware_runtime::{Clock, Metrics, Network as RNetwork, Quota, Resolver, Spawner};
+use commonware_runtime::{
+    BufferPooler, Clock, Metrics, Network as RNetwork, Quota, Resolver, Spawner,
+};
 use rand_core::CryptoRngCore;
 
 use crate::{
@@ -57,7 +59,7 @@ impl<P: PublicKey> fmt::Debug for NetworkControl<P> {
 impl<C, E> TransportProvider<C::PublicKey, E> for NetworkTransportProvider<C>
 where
     C: Signer,
-    E: Spawner + Clock + CryptoRngCore + RNetwork + Resolver + Metrics,
+    E: Spawner + BufferPooler + Clock + CryptoRngCore + RNetwork + Resolver + Metrics,
 {
     type Control = NetworkControl<C::PublicKey>;
     type Error = TransportError;

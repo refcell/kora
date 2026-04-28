@@ -116,6 +116,48 @@ print_endpoints() {
     echo ""
 }
 
+check_dkg_outputs() {
+    local expected_checksum=""
+
+    for i in 0 1 2 3; do
+        local volume="kora-devnet_data_node${i}"
+
+        if ! docker volume inspect "$volume" >/dev/null 2>&1; then
+            return 1
+        fi
+
+        if ! docker run --rm -v "${volume}:/data" alpine \
+            test -f /data/share.key -a -f /data/output.json >/dev/null 2>&1; then
+            return 1
+        fi
+
+        local checksum
+        checksum=$(docker run --rm -v "${volume}:/data" alpine \
+            sha256sum /data/output.json 2>/dev/null | awk '{print $1}')
+
+        if [[ -z "$checksum" ]]; then
+            return 1
+        fi
+
+        if [[ -z "$expected_checksum" ]]; then
+            expected_checksum="$checksum"
+        elif [[ "$checksum" != "$expected_checksum" ]]; then
+            return 1
+        fi
+    done
+
+    return 0
+}
+
+clear_dkg_outputs() {
+    for i in 0 1 2 3; do
+        local volume="kora-devnet_data_node${i}"
+        docker volume inspect "$volume" >/dev/null 2>&1 || continue
+        docker run --rm -v "${volume}:/data" alpine \
+            rm -f /data/share.key /data/output.json /data/dkg_state.json >/dev/null 2>&1 || true
+    done
+}
+
 cd "$(dirname "$0")/.."
 
 print_header
@@ -137,9 +179,11 @@ docker volume inspect kora-devnet_shared_config >/dev/null 2>&1 && \
     docker run --rm -v kora-devnet_shared_config:/shared alpine test -f /shared/peers.json 2>/dev/null && \
     CONFIG_EXISTS=true
 
-docker volume inspect kora-devnet_data_node0 >/dev/null 2>&1 && \
-    docker run --rm -v kora-devnet_data_node0:/data alpine test -f /data/share.key 2>/dev/null && \
+if check_dkg_outputs; then
     SHARES_EXIST=true
+else
+    clear_dkg_outputs
+fi
 
 echo ""
 
@@ -171,6 +215,11 @@ if [[ "$INTERACTIVE_DKG" == "true" ]]; then
     if [[ "$SHARES_EXIST" != "true" ]]; then
         echo ""
         print_phase "1.5/3" "Interactive DKG Ceremony"
+
+        # DKG jobs use the same node0..node3 hostnames as validators. Stop validators first so
+        # Docker DNS cannot route ceremony traffic to stale validator containers.
+        docker compose -f compose/devnet.yaml stop \
+            validator-node0 validator-node1 validator-node2 validator-node3 >/dev/null 2>&1 || true
         
         # Start DKG nodes
         run_with_spinner "Starting DKG nodes..." docker compose -f compose/devnet.yaml --profile interactive-dkg up -d \
@@ -222,7 +271,15 @@ if [[ "$INTERACTIVE_DKG" == "true" ]]; then
     fi
 else
     if [[ "$SHARES_EXIST" != "true" ]]; then
-        print_success "Threshold shares generated (trusted dealer)"
+        echo ""
+        print_phase "1.5/3" "Trusted Dealer DKG"
+
+        if run_with_spinner "Generating threshold shares..." docker compose -f compose/devnet.yaml run --rm init-config; then
+            print_success "Threshold shares generated"
+        else
+            print_error "Trusted dealer DKG failed"
+            exit 1
+        fi
     else
         print_skip "Threshold shares exist"
     fi

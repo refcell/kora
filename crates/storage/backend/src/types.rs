@@ -5,10 +5,7 @@ use bytes::{Buf, BufMut};
 use commonware_codec::{EncodeSize, Error as CodecError, Read, Write};
 use commonware_cryptography::sha256::Sha256 as QmdbHasher;
 use commonware_runtime::tokio;
-use commonware_storage::{
-    qmdb::{NonDurable, Unmerkleized, any},
-    translator::EightCap,
-};
+use commonware_storage::{merkle::mmr, qmdb::any, translator::EightCap};
 use commonware_utils::sequence::FixedBytes;
 use kora_qmdb::AccountEncoding;
 
@@ -75,40 +72,24 @@ impl Read for StorageValue {
     }
 }
 
-pub(crate) type AccountDb =
-    any::unordered::variable::Db<Context, AccountKey, AccountValue, QmdbHasher, EightCap>;
-pub(crate) type StorageDb =
-    any::unordered::variable::Db<Context, StorageKey, StorageValue, QmdbHasher, EightCap>;
-pub(crate) type CodeDb =
-    any::unordered::variable::Db<Context, CodeKey, Vec<u8>, QmdbHasher, EightCap>;
-
-pub(crate) type AccountDbDirty = any::unordered::variable::Db<
+pub(crate) type AccountDb = any::unordered::variable::Db<
+    mmr::Family,
     Context,
     AccountKey,
     AccountValue,
     QmdbHasher,
     EightCap,
-    Unmerkleized,
-    NonDurable,
 >;
-pub(crate) type StorageDbDirty = any::unordered::variable::Db<
+pub(crate) type StorageDb = any::unordered::variable::Db<
+    mmr::Family,
     Context,
     StorageKey,
     StorageValue,
     QmdbHasher,
     EightCap,
-    Unmerkleized,
-    NonDurable,
 >;
-pub(crate) type CodeDbDirty = any::unordered::variable::Db<
-    Context,
-    CodeKey,
-    Vec<u8>,
-    QmdbHasher,
-    EightCap,
-    Unmerkleized,
-    NonDurable,
->;
+pub(crate) type CodeDb =
+    any::unordered::variable::Db<mmr::Family, Context, CodeKey, Vec<u8>, QmdbHasher, EightCap>;
 
 pub(crate) struct StoreSlot<T>(Option<T>);
 

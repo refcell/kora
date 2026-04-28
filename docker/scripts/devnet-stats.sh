@@ -65,10 +65,12 @@ render() {
     
     echo -e "${BOLD}${CYAN}Node Status${NC}"
     echo -e "┌───────┬──────────┬────────────┬──────────┬────────────┬────────────┬────────────┬────────────┬────────┐"
-    echo -e "│ ${BOLD}Node${NC}  │ ${BOLD}RPC${NC}      │ ${BOLD}Uptime${NC}     │ ${BOLD}View${NC}     │ ${BOLD}Finalized${NC}  │ ${BOLD}Nullified${NC}  │ ${BOLD}Proposed${NC}   │ ${BOLD}Throughput${NC} │ ${BOLD}Leader${NC} │"
+    echo -e "│ ${BOLD}Node${NC}  │ ${BOLD}Status${NC}   │ ${BOLD}Uptime${NC}     │ ${BOLD}View${NC}     │ ${BOLD}Finalized${NC}  │ ${BOLD}Nullified${NC}  │ ${BOLD}Proposed${NC}   │ ${BOLD}Throughput${NC} │ ${BOLD}Leader${NC} │"
     echo -e "├───────┼──────────┼────────────┼──────────┼────────────┼────────────┼────────────┼────────────┼────────┤"
     
+    local rpc_count=0
     local healthy_count=0
+    local stalled_count=0
     local max_uptime=0
     local total_finalized=0
     local max_view=0
@@ -86,11 +88,12 @@ render() {
         if [[ "$status" != "{}" ]]; then
             # Parse with single jq call
             local parsed
-            parsed=$(echo "$status" | jq -r '[.uptimeSecs // .uptime_secs // 0, .currentView // .current_view // 0, .finalizedCount // .finalized_count // 0, .nullifiedCount // .nullified_count // 0, .proposedCount // .proposed_count // 0, .isLeader // .is_leader // false] | @tsv' 2>/dev/null)
+            parsed=$(echo "$status" | jq -r '[.validatorIndex // .validator_index // empty, .uptimeSecs // .uptime_secs // 0, .currentView // .current_view // 0, .finalizedCount // .finalized_count // 0, .nullifiedCount // .nullified_count // 0, .proposedCount // .proposed_count // 0, .isLeader // .is_leader // false] | @tsv' 2>/dev/null)
             
             if [[ -n "$parsed" ]]; then
-                read -r uptime view finalized nullified proposed leader <<< "$parsed"
+                read -r validator_index uptime view finalized nullified proposed leader <<< "$parsed"
                 
+                validator_index="${validator_index:-$i}"
                 uptime="${uptime:-0}"
                 view="${view:-0}"
                 finalized="${finalized:-0}"
@@ -100,11 +103,18 @@ render() {
                 [[ $uptime -gt $max_uptime ]] && max_uptime=$uptime
                 [[ $view -gt $max_view ]] && max_view=$view
                 total_finalized=$finalized
-                ((++healthy_count))
+                ((++rpc_count))
                 
                 local uptime_str=$(format_uptime "$uptime")
                 local leader_str="-"
                 [[ "$leader" == "true" ]] && leader_str="${MAGENTA}★${NC}"
+                local rpc_status="${GREEN}online${NC} "
+                if [[ $view -eq 0 && $finalized -eq 0 && $proposed -eq 0 && $uptime -gt 10 ]]; then
+                    rpc_status="${YELLOW}stalled${NC}"
+                    ((++stalled_count))
+                else
+                    ((++healthy_count))
+                fi
                 
                 # Calculate throughput (blocks/sec)
                 local throughput_str="-"
@@ -117,8 +127,8 @@ render() {
                     [[ $tps_int -gt $max_throughput ]] && max_throughput=$tps_int
                 fi
                 
-                printf "│ ${CYAN}%-5s${NC} │ ${GREEN}online${NC}   │ %-10s │ %-8s │ %-10s │ %-10s │ %-10s │ %-10s │   %b    │\n" \
-                    "$i" "$uptime_str" "$view" "$finalized" "$nullified" "$proposed" "$throughput_str" "$leader_str"
+                printf "│ ${CYAN}%-5s${NC} │ %b │ %-10s │ %-8s │ %-10s │ %-10s │ %-10s │ %-10s │   %b    │\n" \
+                    "$validator_index" "$rpc_status" "$uptime_str" "$view" "$finalized" "$nullified" "$proposed" "$throughput_str" "$leader_str"
             else
                 printf "│ ${CYAN}%-5s${NC} │ ${RED}offline${NC}  │ -          │ -        │ -          │ -          │ -          │ -          │   -    │\n" "$i"
             fi
@@ -150,7 +160,7 @@ render() {
         throughput_str=$(awk "BEGIN {printf \"%.2f b/s\", $max_throughput / 100}")
     fi
     
-    echo -e "  ${DIM}Healthy:${NC} ${health_color}${healthy_count}/4${NC}  │  ${DIM}Threshold:${NC} $threshold  │  ${DIM}View:${NC} ${CYAN}$max_view${NC}  │  ${DIM}Finalized:${NC} ${GREEN}$total_finalized${NC}  │  ${DIM}Throughput:${NC} ${CYAN}$throughput_str${NC}  │  ${DIM}Uptime:${NC} $uptime_str"
+    echo -e "  ${DIM}Consensus:${NC} ${health_color}${healthy_count}/4${NC}  │  ${DIM}RPC:${NC} ${GREEN}${rpc_count}/4${NC}  │  ${DIM}Stalled:${NC} ${YELLOW}${stalled_count}${NC}  │  ${DIM}Threshold:${NC} $threshold  │  ${DIM}View:${NC} ${CYAN}$max_view${NC}  │  ${DIM}Finalized:${NC} ${GREEN}$total_finalized${NC}  │  ${DIM}Throughput:${NC} ${CYAN}$throughput_str${NC}  │  ${DIM}Uptime:${NC} $uptime_str"
     
     # Endpoints
     echo ""

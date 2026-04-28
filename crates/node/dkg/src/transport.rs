@@ -11,7 +11,7 @@ use commonware_p2p::{
     Ingress, Manager, Receiver as ReceiverTrait, Recipients, Sender as SenderTrait,
     authenticated::discovery,
 };
-use commonware_runtime::{Clock, Handle, Metrics, Network, Quota, Resolver, Spawner};
+use commonware_runtime::{BufferPooler, Clock, Handle, Metrics, Network, Quota, Resolver, Spawner};
 use commonware_utils::ordered::Set;
 use rand_core::CryptoRngCore;
 
@@ -196,7 +196,7 @@ impl DkgTransportConfig {
     /// and starts the network.
     pub fn build<E>(self, context: E) -> DkgTransport<E>
     where
-        E: Spawner + Clock + CryptoRngCore + Network + Resolver + Metrics,
+        E: Spawner + BufferPooler + Clock + CryptoRngCore + Network + Resolver + Metrics,
     {
         let (mut network, oracle) =
             discovery::Network::new(context.with_label("dkg-network"), self.inner);
@@ -216,7 +216,7 @@ impl<E: Clock> DkgTransport<E> {
     ///
     /// This should be called with the DKG ceremony participants before starting.
     pub async fn set_participants(&mut self, participants: Set<ed25519::PublicKey>) {
-        self.oracle.update(0, participants).await;
+        self.oracle.track(0, participants).await;
     }
 
     /// Send a message to a specific peer.
@@ -247,7 +247,7 @@ impl<E: Clock> DkgTransport<E> {
     ///
     /// Returns the sender's public key and the message bytes.
     pub async fn recv(&mut self) -> Option<(ed25519::PublicKey, Bytes)> {
-        self.receiver.recv().await.ok()
+        self.receiver.recv().await.ok().map(|(sender, message)| (sender, Bytes::from(message)))
     }
 }
 

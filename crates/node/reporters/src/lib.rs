@@ -11,7 +11,7 @@ use commonware_consensus::{
     Block as _, Reporter,
     marshal::Update,
     simplex::{
-        scheme::bls12381_threshold::{Scheme, Seedable as _},
+        scheme::bls12381_threshold::vrf::{Scheme, Seedable as _},
         types::Activity,
     },
 };

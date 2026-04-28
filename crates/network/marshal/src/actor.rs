@@ -8,9 +8,9 @@ use std::num::{NonZeroU64, NonZeroUsize};
 use commonware_consensus::{
     Block,
     marshal::{
-        Mailbox,
-        actor::Actor,
-        config::Config,
+        Config,
+        core::{Actor, Mailbox},
+        standard::Standard,
         store::{Blocks, Certificates},
     },
     simplex::scheme::Scheme,
@@ -18,7 +18,7 @@ use commonware_consensus::{
 };
 use commonware_cryptography::certificate::Provider;
 use commonware_parallel::Sequential;
-use commonware_runtime::{Clock, Metrics, Spawner, Storage, buffer::PoolRef};
+use commonware_runtime::{BufferPooler, Clock, Metrics, Spawner, Storage, buffer::paged::CacheRef};
 use commonware_utils::{Acknowledgement, NZU64, NZUsize};
 use rand_core::CryptoRngCore;
 
@@ -99,14 +99,18 @@ impl ActorInitializer {
         finalizations_by_height: FC,
         finalized_blocks: FB,
         provider: P,
-        buffer_pool: PoolRef,
+        page_cache: CacheRef,
         block_codec_config: B::Cfg,
-    ) -> (Actor<E, B, P, FC, FB, FixedEpocher, Sequential, A>, Mailbox<P::Scheme, B>, Height)
+    ) -> (
+        Actor<E, Standard<B>, P, FC, FB, FixedEpocher, Sequential, A>,
+        Mailbox<P::Scheme, Standard<B>>,
+        Height,
+    )
     where
-        E: CryptoRngCore + Spawner + Metrics + Clock + Storage,
+        E: BufferPooler + CryptoRngCore + Spawner + Metrics + Clock + Storage,
         B: Block,
-        P: Provider<Scope = Epoch, Scheme: Scheme<B::Commitment>>,
-        FC: Certificates<Commitment = B::Commitment, Scheme = P::Scheme>,
+        P: Provider<Scope = Epoch, Scheme: Scheme<B::Digest>>,
+        FC: Certificates<BlockDigest = B::Digest, Commitment = B::Digest, Scheme = P::Scheme>,
         FB: Blocks<Block = B>,
         A: Acknowledgement,
     {
@@ -117,12 +121,13 @@ impl ActorInitializer {
             mailbox_size: Self::DEFAULT_MAILBOX_SIZE,
             view_retention_timeout: Self::DEFAULT_VIEW_RETENTION_TIMEOUT,
             prunable_items_per_section: Self::DEFAULT_PRUNABLE_ITEMS_PER_SECTION,
-            buffer_pool,
+            page_cache,
             replay_buffer: Self::DEFAULT_REPLAY_BUFFER,
             key_write_buffer: Self::DEFAULT_KEY_WRITE_BUFFER,
             value_write_buffer: Self::DEFAULT_VALUE_WRITE_BUFFER,
             block_codec_config,
             max_repair: Self::DEFAULT_MAX_REPAIR,
+            max_pending_acks: NZUsize!(1024),
             strategy: Sequential,
         };
 
@@ -139,15 +144,19 @@ impl ActorInitializer {
         finalizations_by_height: FC,
         finalized_blocks: FB,
         provider: P,
-        buffer_pool: PoolRef,
+        page_cache: CacheRef,
         block_codec_config: B::Cfg,
         partition_prefix: impl Into<String>,
-    ) -> (Actor<E, B, P, FC, FB, FixedEpocher, Sequential, A>, Mailbox<P::Scheme, B>, Height)
+    ) -> (
+        Actor<E, Standard<B>, P, FC, FB, FixedEpocher, Sequential, A>,
+        Mailbox<P::Scheme, Standard<B>>,
+        Height,
+    )
     where
-        E: CryptoRngCore + Spawner + Metrics + Clock + Storage,
+        E: BufferPooler + CryptoRngCore + Spawner + Metrics + Clock + Storage,
         B: Block,
-        P: Provider<Scope = Epoch, Scheme: Scheme<B::Commitment>>,
-        FC: Certificates<Commitment = B::Commitment, Scheme = P::Scheme>,
+        P: Provider<Scope = Epoch, Scheme: Scheme<B::Digest>>,
+        FC: Certificates<BlockDigest = B::Digest, Commitment = B::Digest, Scheme = P::Scheme>,
         FB: Blocks<Block = B>,
         A: Acknowledgement,
     {
@@ -158,12 +167,13 @@ impl ActorInitializer {
             mailbox_size: Self::DEFAULT_MAILBOX_SIZE,
             view_retention_timeout: Self::DEFAULT_VIEW_RETENTION_TIMEOUT,
             prunable_items_per_section: Self::DEFAULT_PRUNABLE_ITEMS_PER_SECTION,
-            buffer_pool,
+            page_cache,
             replay_buffer: Self::DEFAULT_REPLAY_BUFFER,
             key_write_buffer: Self::DEFAULT_KEY_WRITE_BUFFER,
             value_write_buffer: Self::DEFAULT_VALUE_WRITE_BUFFER,
             block_codec_config,
             max_repair: Self::DEFAULT_MAX_REPAIR,
+            max_pending_acks: NZUsize!(1024),
             strategy: Sequential,
         };
 

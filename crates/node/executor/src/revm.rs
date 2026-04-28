@@ -243,7 +243,7 @@ impl<S: StateDb> BlockExecutor<S> for RevmExecutor {
             let result_and_state =
                 evm.replay().map_err(|e| ExecutionError::TxExecution(format!("{:?}", e)))?;
 
-            let gas_used = result_and_state.result.gas_used();
+            let gas_used = result_and_state.result.tx_gas_used();
             cumulative_gas = cumulative_gas.saturating_add(gas_used);
 
             let receipt =

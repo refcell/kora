@@ -64,7 +64,7 @@ redo-dkg:
     
     echo "Removing old DKG shares..."
     for i in 0 1 2 3; do
-        docker run --rm -v kora-devnet_data_node${i}:/data alpine rm -f /data/share.key /data/output.json
+        docker run --rm -v kora-devnet_data_node${i}:/data alpine rm -f /data/share.key /data/output.json /data/dkg_state.json
     done
     
     echo "Starting interactive DKG ceremony..."
@@ -73,9 +73,9 @@ redo-dkg:
     echo "Waiting for DKG ceremony to complete..."
     timeout=300
     while true; do
-        EXITED=$(docker compose -f compose/devnet.yaml ps --format json 2>/dev/null | \
+        EXITED=$(docker compose -f compose/devnet.yaml ps -a --format json 2>/dev/null | \
             jq -r 'select(.Service | startswith("dkg-")) | select(.State == "exited") | select(.ExitCode == 0) | .Service' 2>/dev/null | wc -l | tr -d ' ')
-        FAILED=$(docker compose -f compose/devnet.yaml ps --format json 2>/dev/null | \
+        FAILED=$(docker compose -f compose/devnet.yaml ps -a --format json 2>/dev/null | \
             jq -r 'select(.Service | startswith("dkg-")) | select(.State == "exited") | select(.ExitCode != 0) | .Service' 2>/dev/null | wc -l | tr -d ' ')
         
         [[ "$FAILED" -gt 0 ]] && echo "DKG ceremony failed!" && exit 1

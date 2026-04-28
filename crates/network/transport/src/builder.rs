@@ -4,7 +4,9 @@ use std::num::NonZeroU32;
 
 use commonware_cryptography::Signer;
 use commonware_p2p::authenticated::discovery;
-use commonware_runtime::{Clock, Metrics, Network as RNetwork, Quota, Resolver, Spawner};
+use commonware_runtime::{
+    BufferPooler, Clock, Metrics, Network as RNetwork, Quota, Resolver, Spawner,
+};
 use rand_core::CryptoRngCore;
 
 use crate::{
@@ -56,7 +58,7 @@ impl<C: Signer> TransportConfig<C> {
     /// ```
     pub fn build<E>(self, context: E) -> NetworkTransport<C::PublicKey, E>
     where
-        E: Spawner + Clock + CryptoRngCore + RNetwork + Resolver + Metrics,
+        E: Spawner + BufferPooler + Clock + CryptoRngCore + RNetwork + Resolver + Metrics,
     {
         self.build_with_quota(context, default_quota())
     }
@@ -67,7 +69,7 @@ impl<C: Signer> TransportConfig<C> {
     /// rate limit for all channels.
     pub fn build_with_quota<E>(self, context: E, quota: Quota) -> NetworkTransport<C::PublicKey, E>
     where
-        E: Spawner + Clock + CryptoRngCore + RNetwork + Resolver + Metrics,
+        E: Spawner + BufferPooler + Clock + CryptoRngCore + RNetwork + Resolver + Metrics,
     {
         let backlog = self.backlog;
 

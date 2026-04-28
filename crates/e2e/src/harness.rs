@@ -296,7 +296,7 @@ async fn start_single_node(
     partition_prefix: &str,
 ) -> anyhow::Result<TestNode> {
     let quota = DefaultQuota::init();
-    let buffer_pool = DefaultPool::init();
+    let page_cache = DefaultPool::init(context);
     let block_cfg = block_codec_cfg();
 
     let mut control = {
@@ -312,7 +312,6 @@ async fn start_single_node(
     // Initialize ledger
     let state = LedgerView::init(
         context.with_label(&format!("state_{index}")),
-        buffer_pool.clone(),
         format!("{partition_prefix}-qmdb-{index}"),
         bootstrap.genesis_alloc.clone(),
     )
@@ -340,7 +339,7 @@ async fn start_single_node(
         control.clone(),
         manager,
         scheme.clone(),
-        buffer_pool.clone(),
+        page_cache.clone(),
         block_cfg,
         channels.marshal.blocks,
         channels.marshal.backfill,
@@ -384,13 +383,14 @@ async fn start_single_node(
             replay_buffer: NZUsize!(1024 * 1024),
             write_buffer: NZUsize!(1024 * 1024),
             leader_timeout: Duration::from_secs(1),
-            notarization_timeout: Duration::from_secs(2),
-            nullify_retry: Duration::from_secs(5),
+            certification_timeout: Duration::from_secs(2),
+            timeout_retry: Duration::from_secs(5),
             fetch_timeout: Duration::from_secs(1),
             activity_timeout: ViewDelta::new(20),
             skip_timeout: ViewDelta::new(10),
             fetch_concurrent: 8,
-            buffer_pool,
+            page_cache,
+            forwarding: simplex::ForwardingPolicy::Disabled,
         },
     );
     engine.start(channels.simplex.votes, channels.simplex.certs, channels.simplex.resolver);

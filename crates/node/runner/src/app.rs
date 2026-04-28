@@ -5,7 +5,8 @@ use std::{collections::BTreeSet, time::Instant};
 use alloy_consensus::Header;
 use alloy_primitives::{Address, B256, Bytes};
 use commonware_consensus::{
-    Application, Block as _, VerifyingApplication, marshal::ingress::mailbox::AncestorStream,
+    Application, Block as _, VerifyingApplication,
+    marshal::ancestry::{AncestorStream, BlockProvider},
     simplex::types::Context,
 };
 use commonware_cryptography::{Committable as _, certificate::Scheme as CertScheme};
@@ -259,11 +260,14 @@ where
         async move { self.ledger.genesis_block() }
     }
 
-    fn propose(
+    fn propose<A>(
         &mut self,
         _context: (Env, Self::Context),
-        mut ancestry: AncestorStream<Self::SigningScheme, Self::Block>,
-    ) -> impl std::future::Future<Output = Option<Self::Block>> + Send {
+        mut ancestry: AncestorStream<A, Self::Block>,
+    ) -> impl std::future::Future<Output = Option<Self::Block>> + Send
+    where
+        A: BlockProvider<Block = Self::Block>,
+    {
         let node_state = self.node_state.clone();
         async move {
             let start = Instant::now();
@@ -298,11 +302,14 @@ where
     S: CertScheme + Send + Sync + 'static,
     E: BlockExecutor<OverlayState<QmdbState>, Tx = Bytes> + Clone + Send + Sync + 'static,
 {
-    fn verify(
+    fn verify<A>(
         &mut self,
         _context: (Env, Self::Context),
-        mut ancestry: AncestorStream<Self::SigningScheme, Self::Block>,
-    ) -> impl std::future::Future<Output = bool> + Send {
+        mut ancestry: AncestorStream<A, Self::Block>,
+    ) -> impl std::future::Future<Output = bool> + Send
+    where
+        A: BlockProvider<Block = Self::Block>,
+    {
         async move {
             let start = Instant::now();
 

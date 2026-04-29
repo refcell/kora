@@ -27,7 +27,7 @@ use kora_service::{NodeRunContext, NodeRunner};
 use kora_simplex::{DEFAULT_MAILBOX_SIZE as MAILBOX_SIZE, DefaultPool};
 use kora_transport::NetworkTransport;
 use kora_txpool::{PoolConfig, TransactionValidator};
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 use crate::{RevmApplication, RunnerError, scheme::ThresholdScheme};
 
@@ -242,15 +242,18 @@ impl NodeRunner for ProductionRunner {
                 let state = tx_state.clone();
                 Box::pin(async move {
                     let tx = Tx::new(data);
+                    let tx_id = tx.id();
                     let validator =
                         TransactionValidator::new(chain_id, state, PoolConfig::default());
-                    validator
-                        .validate(tx.clone())
-                        .await
-                        .map_err(|err| kora_rpc::RpcError::InvalidTransaction(err.to_string()))?;
+                    validator.validate(tx.clone()).await.map_err(|err| {
+                        warn!(?tx_id, error = %err, "rpc submit: validator rejected tx");
+                        kora_rpc::RpcError::InvalidTransaction(err.to_string())
+                    })?;
                     if ledger.submit_tx(tx).await {
+                        debug!(?tx_id, "rpc submit: tx inserted into mempool");
                         Ok(())
                     } else {
+                        warn!(?tx_id, "rpc submit: ledger.submit_tx returned false (duplicate or pool error)");
                         Err(kora_rpc::RpcError::InvalidTransaction(
                             "transaction rejected by mempool".to_string(),
                         ))

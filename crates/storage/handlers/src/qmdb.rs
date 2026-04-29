@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use kora_qmdb::{
     AccountEncoding, AccountUpdate, ChangeSet, QmdbBatchable, QmdbGettable, QmdbStore, StorageKey,
 };
-use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::error::HandleError;
 
@@ -34,11 +34,16 @@ pub trait RootProvider: Send + Sync {
 pub struct QmdbHandle<A, S, C> {
     inner: Arc<RwLock<QmdbStore<A, S, C>>>,
     root_provider: Option<Arc<RwLock<dyn RootProvider>>>,
+    storage_access: Arc<Mutex<()>>,
 }
 
 impl<A, S, C> Clone for QmdbHandle<A, S, C> {
     fn clone(&self) -> Self {
-        Self { inner: Arc::clone(&self.inner), root_provider: self.root_provider.clone() }
+        Self {
+            inner: Arc::clone(&self.inner),
+            root_provider: self.root_provider.clone(),
+            storage_access: Arc::clone(&self.storage_access),
+        }
     }
 }
 
@@ -49,13 +54,18 @@ impl<A, S, C> QmdbHandle<A, S, C> {
         Self {
             inner: Arc::new(RwLock::new(QmdbStore::new(accounts, storage, code))),
             root_provider: None,
+            storage_access: Arc::new(Mutex::new(())),
         }
     }
 
     /// Create from an existing `QmdbStore`.
     #[must_use]
     pub fn from_store(store: QmdbStore<A, S, C>) -> Self {
-        Self { inner: Arc::new(RwLock::new(store)), root_provider: None }
+        Self {
+            inner: Arc::new(RwLock::new(store)),
+            root_provider: None,
+            storage_access: Arc::new(Mutex::new(())),
+        }
     }
 
     /// Set the root provider for state root computation.
@@ -68,6 +78,11 @@ impl<A, S, C> QmdbHandle<A, S, C> {
     /// Get a reference to the root provider if set.
     pub fn root_provider(&self) -> Option<&Arc<RwLock<dyn RootProvider>>> {
         self.root_provider.as_ref()
+    }
+
+    /// Acquire the shared gate for operations that open or mutate backend partitions.
+    pub async fn storage_access(&self) -> MutexGuard<'_, ()> {
+        self.storage_access.lock().await
     }
 
     /// Acquire read lock on the underlying store.

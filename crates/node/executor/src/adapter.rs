@@ -1,16 +1,24 @@
 //! State database adapter for REVM.
 //!
-//! Note: REVM's `DatabaseRef` trait is synchronous, so we use `futures::executor::block_on`
-//! to bridge the async StateDb traits into the sync REVM interface.
+//! Note: REVM's `DatabaseRef` trait is synchronous, so we bridge async StateDb traits into
+//! the sync REVM interface. When executing inside a Tokio runtime, we use `block_in_place`
+//! so async storage can continue making progress on runtime workers.
 
 use alloy_primitives::{Address, B256, KECCAK256_EMPTY, U256};
 use kora_traits::{StateDbError, StateDbRead};
 use revm::{bytecode::Bytecode, database_interface::DatabaseRef, state::AccountInfo};
+use tokio::runtime::RuntimeFlavor;
 
 use crate::ExecutionError;
 
 /// Wrapper for blocking async operations in sync contexts.
 fn block_on<F: std::future::Future>(f: F) -> F::Output {
+    if let Ok(handle) = tokio::runtime::Handle::try_current()
+        && handle.runtime_flavor() == RuntimeFlavor::MultiThread
+    {
+        return tokio::task::block_in_place(|| handle.block_on(f));
+    }
+
     futures::executor::block_on(f)
 }
 

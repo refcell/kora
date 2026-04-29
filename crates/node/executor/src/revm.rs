@@ -171,6 +171,157 @@ impl Default for RevmExecutor {
     }
 }
 
+/// Parameters for a read-only EVM call (used by `eth_call`/`eth_estimateGas`).
+///
+/// Mirrors the JSON-RPC `CallRequest` shape but with non-optional defaults
+/// resolved, so the executor does not depend on rpc-layer types.
+#[derive(Clone, Debug, Default)]
+pub struct CallParams {
+    /// Caller address (`from`). Defaults to zero address if unspecified.
+    pub from: alloy_primitives::Address,
+    /// Recipient address. `None` is contract creation (CREATE).
+    pub to: Option<alloy_primitives::Address>,
+    /// Value to transfer.
+    pub value: U256,
+    /// Calldata (or initcode for CREATE).
+    pub data: Bytes,
+    /// Gas limit. `None` falls back to the block gas limit.
+    pub gas_limit: Option<u64>,
+    /// Effective gas price.
+    pub gas_price: u128,
+    /// Caller nonce.
+    pub nonce: u64,
+}
+
+impl RevmExecutor {
+    /// Run a read-only call simulation against `state`.
+    ///
+    /// Mirrors [`BlockExecutor::execute`] for one transaction but discards
+    /// the resulting state changes — used to serve `eth_call` and as a
+    /// primitive for [`Self::estimate_gas`].
+    ///
+    /// # Errors
+    ///
+    /// - [`ExecutionError::Revert`] with the revert output if the call reverted.
+    /// - [`ExecutionError::TxExecution`] for halts and revm-internal errors.
+    /// - [`ExecutionError::InvalidTx`] if the request fails to build a valid
+    ///   `TxEnv` (bad gas/value combination, etc.).
+    pub fn simulate_call<S: kora_traits::StateDbRead>(
+        &self,
+        state: &S,
+        params: CallParams,
+        context: &BlockContext,
+    ) -> Result<Bytes, ExecutionError> {
+        let adapter = StateDbAdapter::new(state.clone());
+        let db = State::builder().with_database_ref(adapter).build();
+
+        type Db<S> = State<revm::database::WrapDatabaseRef<StateDbAdapter<S>>>;
+        let ctx: Context<BlockEnv, _, _, Db<S>, Journal<Db<S>>, ()> =
+            Context::new(db, self.config.spec_id);
+        let ctx = ctx
+            .modify_cfg_chained(|cfg| {
+                cfg.chain_id = self.config.chain_id;
+            })
+            .modify_block_chained(|blk: &mut BlockEnv| {
+                blk.number = U256::from(context.header.number);
+                blk.timestamp = U256::from(context.header.timestamp);
+                blk.beneficiary = context.header.beneficiary;
+                blk.gas_limit = context.header.gas_limit;
+                blk.basefee = context.header.base_fee_per_gas.unwrap_or_default();
+                blk.prevrandao = Some(context.prevrandao);
+            });
+
+        let mut evm = ctx.build_mainnet();
+
+        let tx_env =
+            call_params_to_tx_env(&params, self.config.chain_id, context.header.gas_limit)?;
+        evm.set_tx(tx_env);
+
+        let result_and_state =
+            evm.replay().map_err(|e| ExecutionError::TxExecution(format!("{:?}", e)))?;
+
+        match result_and_state.result {
+            ExecutionResult::Success { output, .. } => match output {
+                Output::Call(bytes) => Ok(bytes),
+                Output::Create(bytes, _) => Ok(bytes),
+            },
+            ExecutionResult::Revert { output, .. } => Err(ExecutionError::Revert(output)),
+            ExecutionResult::Halt { reason, .. } => {
+                Err(ExecutionError::TxExecution(format!("halt: {:?}", reason)))
+            }
+        }
+    }
+
+    /// Estimate gas via binary search over [`Self::simulate_call`].
+    ///
+    /// Confirms the call succeeds at the upper bound (request gas or block
+    /// gas limit), then binary-searches for the minimum gas at which the
+    /// call still succeeds. Bounded to 25 iterations (≈log2(30M)).
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Self::simulate_call`] — propagates a revert/halt at the
+    /// upper bound; otherwise returns the converged minimum.
+    pub fn estimate_gas<S: kora_traits::StateDbRead>(
+        &self,
+        state: &S,
+        mut params: CallParams,
+        context: &BlockContext,
+    ) -> Result<u64, ExecutionError> {
+        let upper =
+            params.gas_limit.unwrap_or(context.header.gas_limit).min(context.header.gas_limit);
+
+        // Confirm the call succeeds at the upper bound.
+        params.gas_limit = Some(upper);
+        self.simulate_call(state, params.clone(), context)?;
+
+        let mut lo = 21_000u64;
+        let mut hi = upper;
+        let mut best = upper;
+        let mut iters = 0u32;
+        while lo + 1 < hi && iters < 25 {
+            iters += 1;
+            let mid = lo + (hi - lo) / 2;
+            params.gas_limit = Some(mid);
+            match self.simulate_call(state, params.clone(), context) {
+                Ok(_) => {
+                    best = mid;
+                    hi = mid;
+                }
+                Err(_) => {
+                    lo = mid;
+                }
+            }
+        }
+        Ok(best)
+    }
+}
+
+/// Build a revm [`revm::context::TxEnv`] from a [`CallParams`].
+///
+/// Differs from [`decode_tx_env`] in that there is no signature to recover —
+/// caller comes from `params.from` directly.
+fn call_params_to_tx_env(
+    params: &CallParams,
+    chain_id: u64,
+    default_gas_limit: u64,
+) -> Result<revm::context::TxEnv, ExecutionError> {
+    let kind = params.to.map_or(TxKind::Create, TxKind::Call);
+    let gas_limit = params.gas_limit.unwrap_or(default_gas_limit);
+
+    revm::context::TxEnv::builder()
+        .caller(params.from)
+        .gas_limit(gas_limit)
+        .gas_price(params.gas_price)
+        .value(params.value)
+        .data(params.data.clone())
+        .nonce(params.nonce)
+        .chain_id(Some(chain_id))
+        .kind(kind)
+        .build()
+        .map_err(|e| ExecutionError::InvalidTx(format!("build call tx env: {:?}", e)))
+}
+
 /// Calculate the expected base fee for the next block (EIP-1559).
 pub fn calculate_base_fee(
     parent_base_fee: u64,
@@ -580,8 +731,7 @@ mod tests {
             GasLimitBounds { min: 5000, max: 30_000_000, max_delta_divisor: 1024 },
         ));
 
-        let mut header = Header::default();
-        header.gas_limit = 1000;
+        let mut header = Header { gas_limit: 1000, ..Header::default() };
         assert!(
             <RevmExecutor as BlockExecutor<MockStateDb>>::validate_header(&executor, &header)
                 .is_err()
@@ -613,11 +763,13 @@ mod tests {
             base_fee_per_gas: None,
         };
 
-        let mut header = Header::default();
-        header.parent_hash = B256::repeat_byte(1);
-        header.number = 101;
-        header.timestamp = 1001;
-        header.gas_limit = 30_000_000;
+        let mut header = Header {
+            parent_hash: B256::repeat_byte(1),
+            number: 101,
+            timestamp: 1001,
+            gas_limit: 30_000_000,
+            ..Header::default()
+        };
 
         assert!(executor.validate_header_against_parent(&header, &parent).is_ok());
 
@@ -638,11 +790,13 @@ mod tests {
             base_fee_per_gas: None,
         };
 
-        let mut header = Header::default();
-        header.parent_hash = B256::repeat_byte(1);
-        header.number = 101;
-        header.timestamp = 999;
-        header.gas_limit = 30_000_000;
+        let header = Header {
+            parent_hash: B256::repeat_byte(1),
+            number: 101,
+            timestamp: 999,
+            gas_limit: 30_000_000,
+            ..Header::default()
+        };
 
         assert!(executor.validate_header_against_parent(&header, &parent).is_err());
     }
@@ -660,11 +814,13 @@ mod tests {
             base_fee_per_gas: None,
         };
 
-        let mut header = Header::default();
-        header.parent_hash = B256::repeat_byte(1);
-        header.number = 101;
-        header.timestamp = 1001;
-        header.gas_limit = 35_000_000;
+        let header = Header {
+            parent_hash: B256::repeat_byte(1),
+            number: 101,
+            timestamp: 1001,
+            gas_limit: 35_000_000,
+            ..Header::default()
+        };
 
         assert!(executor.validate_header_against_parent(&header, &parent).is_err());
     }
@@ -694,8 +850,7 @@ mod tests {
     fn build_receipt_success() {
         let result = ExecutionResult::Success {
             reason: revm::context::result::SuccessReason::Stop,
-            gas_used: 21000,
-            gas_refunded: 0,
+            gas: revm::context::result::ResultGas::default().with_total_gas_spent(21000),
             logs: vec![],
             output: Output::Call(Bytes::new()),
         };
@@ -710,7 +865,11 @@ mod tests {
 
     #[test]
     fn build_receipt_revert() {
-        let result = ExecutionResult::Revert { gas_used: 21000, output: Bytes::new() };
+        let result = ExecutionResult::Revert {
+            gas: revm::context::result::ResultGas::default().with_total_gas_spent(21000),
+            logs: vec![],
+            output: Bytes::new(),
+        };
 
         let receipt = build_receipt(&result, B256::ZERO, 21000, 21000);
         assert!(!receipt.success());
@@ -723,7 +882,8 @@ mod tests {
             reason: revm::context::result::HaltReason::OutOfGas(
                 revm::context::result::OutOfGasError::Basic,
             ),
-            gas_used: 21000,
+            gas: revm::context::result::ResultGas::default().with_total_gas_spent(21000),
+            logs: vec![],
         };
 
         let receipt = build_receipt(&result, B256::ZERO, 21000, 21000);

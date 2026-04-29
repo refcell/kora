@@ -3507,10 +3507,12 @@ dependencies = [
 name = "kora-rpc"
 version = "0.1.0"
 dependencies = [
+ "alloy-consensus",
  "alloy-primitives",
  "async-trait",
  "axum",
  "jsonrpsee",
+ "kora-executor",
  "kora-indexer",
  "kora-traits",
  "parking_lot",

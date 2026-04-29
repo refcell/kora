@@ -93,7 +93,7 @@ impl<S: StateProvider> std::fmt::Debug for RpcServer<S> {
 }
 
 /// Compute a default HTTP address by incrementing the port of the given address.
-fn default_http_addr(jsonrpc_addr: SocketAddr) -> SocketAddr {
+const fn default_http_addr(jsonrpc_addr: SocketAddr) -> SocketAddr {
     SocketAddr::new(jsonrpc_addr.ip(), jsonrpc_addr.port() + 1)
 }
 

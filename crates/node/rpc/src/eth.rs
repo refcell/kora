@@ -658,4 +658,63 @@ mod tests {
         assert_eq!(tx.nonce, U64::from(7));
         assert!(tx.block_hash.is_none());
     }
+
+    /// Regression: when no `tx_submit` callback is wired, `send_raw_transaction`
+    /// silently accepts the tx and returns the hash, but the tx goes nowhere —
+    /// no mempool, no producer, no block. This is exactly the failure mode
+    /// observed on devnet 1337 (`http://65.109.61.210:8545`) where the deployed
+    /// kora binary predates the runner's `with_tx_submit(...)` wiring (commit
+    /// `beb637a`): every tx submitted via JSON-RPC was accepted, hash returned,
+    /// but never included in any block.
+    ///
+    /// The fix lives in the runner: always wire `tx_submit` to a real mempool.
+    /// The downstream observability fix (warn-log when build_block produces an
+    /// empty block while the mempool is non-empty) lives in `app.rs`.
+    #[tokio::test]
+    async fn send_raw_transaction_with_no_callback_silently_accepts_but_drops() {
+        let api = EthApiImpl::new(1, NoopStateProvider); // no tx_submit
+        let tx_data = signed_test_tx(1, 0);
+        let result = EthApiServer::send_raw_transaction(&api, tx_data.clone()).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), alloy_primitives::keccak256(&tx_data));
+        // The tx is in pending_txs (so getTransactionByHash returns something) —
+        // that's exactly what makes the bug invisible to operators.
+        let cached =
+            EthApiServer::get_transaction_by_hash(&api, alloy_primitives::keccak256(&tx_data))
+                .await
+                .unwrap();
+        assert!(
+            cached.is_some(),
+            "RPC caches the tx for visibility even though it has nowhere to send it"
+        );
+    }
+
+    /// Regression: the existing `eth_send_raw_transaction` test only verifies
+    /// that the callback is invoked (a boolean flag). It does not verify that
+    /// the bytes passed to the callback are the same bytes the caller sent.
+    /// A regression that mangled the body (e.g. dropped the chainId, re-encoded
+    /// the envelope, sent a partial slice) would still pass that test. This
+    /// one captures the actual bytes and compares them.
+    #[tokio::test]
+    async fn send_raw_transaction_passes_full_tx_bytes_to_callback() {
+        let captured: Arc<RwLock<Vec<Bytes>>> = Arc::new(RwLock::new(Vec::new()));
+        let captured_clone = captured.clone();
+        let callback: TxSubmitCallback = Arc::new(move |data| {
+            let captured_clone = captured_clone.clone();
+            Box::pin(async move {
+                captured_clone.write().await.push(data);
+                Ok(())
+            })
+        });
+        let api = EthApiImpl::with_tx_submit(1, NoopStateProvider, callback);
+        let tx_data = signed_test_tx(1, 42);
+        let _ = EthApiServer::send_raw_transaction(&api, tx_data.clone()).await.unwrap();
+        let inner = captured.read().await;
+        assert_eq!(inner.len(), 1, "callback invoked exactly once");
+        assert_eq!(
+            &inner[0][..],
+            &tx_data[..],
+            "callback receives the caller's tx bytes verbatim — no re-encoding, no truncation"
+        );
+    }
 }

@@ -37,7 +37,7 @@ use crate::{TestConfig, TestNode, TestSetup};
 
 const MAX_MSG_SIZE: usize = 1024 * 1024;
 const BLOCK_CODEC_MAX_TXS: usize = 64;
-const BLOCK_CODEC_MAX_TX_BYTES: usize = 1024;
+const BLOCK_CODEC_MAX_TX_BYTES: usize = 128 * 1024;
 const EPOCH_LENGTH: u64 = u64::MAX;
 
 type Peer = PublicKey;

@@ -32,7 +32,14 @@ use tracing::{debug, info, trace, warn};
 use crate::{RevmApplication, RunnerError, scheme::ThresholdScheme};
 
 const BLOCK_CODEC_MAX_TXS: usize = 64;
-const BLOCK_CODEC_MAX_TX_BYTES: usize = 1024;
+// Match `PoolConfig::default().max_tx_size` (= 128 KiB) and the domain-level
+// `BlockCfg::default().tx.max_tx_bytes` (also 128 KiB). The previous 1024-byte
+// cap rejected every real contract deploy: the validator admitted contracts
+// up to 128 KiB into the mempool, but the block codec then refused to encode
+// anything > 1 KiB, so the producer silently skipped them. Trivial value
+// transfers and ~22-byte init contracts mined; any actual Solidity contract
+// (1+ KiB of bytecode) was dropped. See PR fixing this for the full diagnostic.
+const BLOCK_CODEC_MAX_TX_BYTES: usize = 128 * 1024;
 const EPOCH_LENGTH: u64 = u64::MAX;
 const PARTITION_PREFIX: &str = "kora";
 

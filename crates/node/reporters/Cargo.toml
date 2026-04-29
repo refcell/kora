@@ -15,6 +15,7 @@ workspace = true
 kora-consensus = { path = "../consensus" }
 kora-domain = { path = "../domain" }
 kora-executor = { path = "../executor" }
+kora-indexer = { path = "../../storage/indexer" }
 kora-ledger = { path = "../ledger" }
 kora-overlay = { path = "../../storage/overlay" }
 kora-qmdb-ledger = { path = "../../storage/qmdb-ledger" }
@@ -28,6 +29,8 @@ commonware-runtime.workspace = true
 commonware-utils.workspace = true
 
 # Alloy
+alloy-consensus.workspace = true
+alloy-eips.workspace = true
 alloy-primitives.workspace = true
 
 # Tracing

@@ -518,7 +518,7 @@ fn raw_tx_to_pending_rpc(data: &Bytes) -> Result<RpcTransaction, RpcError> {
     })
 }
 
-fn transaction_type(envelope: &TxEnvelope) -> u64 {
+const fn transaction_type(envelope: &TxEnvelope) -> u64 {
     match envelope {
         TxEnvelope::Legacy(_) => 0,
         TxEnvelope::Eip2930(_) => 1,
@@ -528,7 +528,7 @@ fn transaction_type(envelope: &TxEnvelope) -> u64 {
     }
 }
 
-fn effective_gas_price(envelope: &TxEnvelope) -> u128 {
+const fn effective_gas_price(envelope: &TxEnvelope) -> u128 {
     match envelope {
         TxEnvelope::Legacy(tx) => tx.tx().gas_price,
         TxEnvelope::Eip2930(tx) => tx.tx().gas_price,
@@ -538,7 +538,7 @@ fn effective_gas_price(envelope: &TxEnvelope) -> u128 {
     }
 }
 
-fn max_fee_per_gas(envelope: &TxEnvelope) -> Option<u128> {
+const fn max_fee_per_gas(envelope: &TxEnvelope) -> Option<u128> {
     match envelope {
         TxEnvelope::Legacy(_) | TxEnvelope::Eip2930(_) => None,
         TxEnvelope::Eip1559(tx) => Some(tx.tx().max_fee_per_gas),
@@ -547,7 +547,7 @@ fn max_fee_per_gas(envelope: &TxEnvelope) -> Option<u128> {
     }
 }
 
-fn max_priority_fee_per_gas(envelope: &TxEnvelope) -> Option<u128> {
+const fn max_priority_fee_per_gas(envelope: &TxEnvelope) -> Option<u128> {
     match envelope {
         TxEnvelope::Legacy(_) | TxEnvelope::Eip2930(_) => None,
         TxEnvelope::Eip1559(tx) => Some(tx.tx().max_priority_fee_per_gas),

@@ -171,7 +171,7 @@ fn recover_sender_and_hash(envelope: &TxEnvelope) -> Result<(Address, B256), TxP
     Ok((sender, hash))
 }
 
-fn effective_gas_price(envelope: &TxEnvelope) -> u128 {
+const fn effective_gas_price(envelope: &TxEnvelope) -> u128 {
     match envelope {
         TxEnvelope::Legacy(tx) => tx.tx().gas_price,
         TxEnvelope::Eip2930(tx) => tx.tx().gas_price,
@@ -532,11 +532,7 @@ mod tests {
 
     /// Sign `count` legacy txs with the same key, returning (sender, raw_txs[]).
     /// Each tx has a sequential nonce starting at `start_nonce`.
-    fn sign_legacy_burst(
-        chain_id: u64,
-        start_nonce: u64,
-        count: u64,
-    ) -> (Address, Vec<Tx>) {
+    fn sign_legacy_burst(chain_id: u64, start_nonce: u64, count: u64) -> (Address, Vec<Tx>) {
         let signing_key = SigningKey::random(&mut OsRng);
         let verifying_key = signing_key.verifying_key();
         let pubkey = verifying_key.to_encoded_point(false);
@@ -583,20 +579,14 @@ mod tests {
         let chain_id = 1u64;
         let (sender, raws) = sign_legacy_burst(chain_id, 0, 39);
 
-        let state = MockState::new()
-            .with_account(sender, 0, U256::from(10_000_000_000_000_000_000u128));
+        let state =
+            MockState::new().with_account(sender, 0, U256::from(10_000_000_000_000_000_000u128));
         let config = PoolConfig::default();
         let validator = TransactionValidator::new(chain_id, state, config);
 
         for (i, raw) in raws.into_iter().enumerate() {
             let res = validator.validate(raw).await;
-            assert!(
-                res.is_ok(),
-                "tx {} (nonce={}) was rejected: {:?}",
-                i,
-                i,
-                res.err()
-            );
+            assert!(res.is_ok(), "tx {} (nonce={}) was rejected: {:?}", i, i, res.err());
             let v = res.unwrap();
             assert_eq!(v.nonce, i as u64);
         }

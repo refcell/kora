@@ -82,7 +82,7 @@ pub struct SenderQueue {
 impl SenderQueue {
     /// Creates a new sender queue.
     #[must_use]
-    pub fn new(sender: Address, initial_nonce: u64) -> Self {
+    pub const fn new(sender: Address, initial_nonce: u64) -> Self {
         Self { sender, next_nonce: initial_nonce, pending: Vec::new(), queued: Vec::new() }
     }
 
@@ -136,22 +136,22 @@ impl SenderQueue {
     }
 
     /// Returns the count of pending transactions.
-    pub fn pending_count(&self) -> usize {
+    pub const fn pending_count(&self) -> usize {
         self.pending.len()
     }
 
     /// Returns the count of queued transactions.
-    pub fn queued_count(&self) -> usize {
+    pub const fn queued_count(&self) -> usize {
         self.queued.len()
     }
 
     /// Returns the total count of transactions.
-    pub fn total_count(&self) -> usize {
+    pub const fn total_count(&self) -> usize {
         self.pending.len() + self.queued.len()
     }
 
     /// Returns true if the queue has no transactions.
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.pending.is_empty() && self.queued.is_empty()
     }
 }

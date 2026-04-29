@@ -350,7 +350,7 @@ fn decode_tx_metadata(tx_bytes: &Bytes) -> Option<TxMetadata> {
     })
 }
 
-fn effective_gas_price(envelope: &TxEnvelope) -> u128 {
+const fn effective_gas_price(envelope: &TxEnvelope) -> u128 {
     match envelope {
         TxEnvelope::Legacy(tx) => tx.tx().gas_price,
         TxEnvelope::Eip2930(tx) => tx.tx().gas_price,

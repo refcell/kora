@@ -9,12 +9,21 @@ use commonware_consensus::{
         p2p::Config,
     },
 };
-use commonware_cryptography::PublicKey;
+use commonware_cryptography::{Digestible, PublicKey};
 use commonware_p2p::{Blocker, Provider, Receiver, Sender};
 use commonware_resolver::p2p;
 use commonware_runtime::{BufferPooler, Clock, Metrics, Spawner};
 use commonware_utils::channel::mpsc;
 use rand::Rng;
+
+/// Receiver for inbound resolver messages.
+pub type ResolverReceiver<B> = mpsc::Receiver<Message<<B as Digestible>::Digest>>;
+
+/// Mailbox used to submit resolver requests.
+pub type ResolverMailbox<B, P> = p2p::Mailbox<Request<<B as Digestible>::Digest>, P>;
+
+/// Resolver channels returned by peer initialization.
+pub type ResolverChannels<B, P> = (ResolverReceiver<B>, ResolverMailbox<B, P>);
 
 /// Initializes the p2p resolver with the given parameters.
 #[derive(Debug, Clone)]
@@ -48,7 +57,7 @@ impl PeerInitializer {
         peer_provider: C,
         blocker: Bl,
         backfill: (S, R),
-    ) -> (mpsc::Receiver<Message<B::Digest>>, p2p::Mailbox<Request<B::Digest>, P>)
+    ) -> ResolverChannels<B, P>
     where
         E: BufferPooler + Rng + Spawner + Clock + Metrics,
         P: PublicKey,

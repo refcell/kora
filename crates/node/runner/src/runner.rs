@@ -260,7 +260,10 @@ impl NodeRunner for ProductionRunner {
                         debug!(?tx_id, "rpc submit: tx inserted into mempool");
                         Ok(())
                     } else {
-                        warn!(?tx_id, "rpc submit: ledger.submit_tx returned false (duplicate or pool error)");
+                        warn!(
+                            ?tx_id,
+                            "rpc submit: ledger.submit_tx returned false (duplicate or pool error)"
+                        );
                         Err(kora_rpc::RpcError::InvalidTransaction(
                             "transaction rejected by mempool".to_string(),
                         ))

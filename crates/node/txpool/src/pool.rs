@@ -330,10 +330,10 @@ impl Mempool for TransactionPool {
         }
 
         for sender in senders_to_check {
-            if let Some(queue) = inner.by_sender.get(&sender) {
-                if queue.is_empty() {
-                    inner.by_sender.remove(&sender);
-                }
+            if let Some(queue) = inner.by_sender.get(&sender)
+                && queue.is_empty()
+            {
+                inner.by_sender.remove(&sender);
             }
         }
 

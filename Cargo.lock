@@ -3511,16 +3511,19 @@ name = "kora-rpc"
 version = "0.1.0"
 dependencies = [
  "alloy-consensus 1.8.3",
+ "alloy-eips 1.8.3",
  "alloy-primitives",
  "async-trait",
  "axum",
  "jsonrpsee",
+ "k256",
  "kora-executor",
  "kora-indexer",
  "kora-traits",
  "parking_lot",
  "serde",
  "serde_json",
+ "sha3",
  "thiserror 2.0.18",
  "tokio",
  "tower 0.5.3",
@@ -3558,6 +3561,7 @@ dependencies = [
  "kora-service",
  "kora-simplex",
  "kora-transport",
+ "kora-txpool",
  "rand 0.8.6",
  "tracing",
 ]

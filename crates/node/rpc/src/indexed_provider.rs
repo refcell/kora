@@ -109,15 +109,23 @@ impl<S: StateDbRead + Send + Sync + 'static> StateProvider for IndexedStateProvi
         self.state.storage(&address, &slot).await.map_err(state_error_to_rpc)
     }
 
-    async fn block_by_number(&self, block: BlockNumberOrTag) -> Result<Option<RpcBlock>, RpcError> {
+    async fn block_by_number(
+        &self,
+        block: BlockNumberOrTag,
+        full_transactions: bool,
+    ) -> Result<Option<RpcBlock>, RpcError> {
         let block_num = self.resolve_block_number(&block)?;
         let indexed = self.index.get_block_by_number(block_num);
-        Ok(indexed.map(indexed_block_to_rpc))
+        Ok(indexed.map(|block| self.indexed_block_to_rpc(block, full_transactions)))
     }
 
-    async fn block_by_hash(&self, hash: B256) -> Result<Option<RpcBlock>, RpcError> {
+    async fn block_by_hash(
+        &self,
+        hash: B256,
+        full_transactions: bool,
+    ) -> Result<Option<RpcBlock>, RpcError> {
         let indexed = self.index.get_block_by_hash(&hash);
-        Ok(indexed.map(indexed_block_to_rpc))
+        Ok(indexed.map(|block| self.indexed_block_to_rpc(block, full_transactions)))
     }
 
     async fn transaction_by_hash(&self, hash: B256) -> Result<Option<RpcTransaction>, RpcError> {
@@ -199,6 +207,43 @@ impl<S: StateDbRead + Send + Sync + 'static> StateProvider for IndexedStateProvi
 }
 
 impl<S> IndexedStateProvider<S> {
+    fn indexed_block_to_rpc(&self, block: IndexedBlock, full_transactions: bool) -> RpcBlock {
+        let transactions = if full_transactions {
+            let txs = self
+                .index
+                .get_transactions_for_block(&block.hash)
+                .into_iter()
+                .map(indexed_tx_to_rpc)
+                .collect();
+            BlockTransactions::Full(txs)
+        } else {
+            BlockTransactions::Hashes(block.transaction_hashes.clone())
+        };
+
+        RpcBlock {
+            hash: block.hash,
+            parent_hash: block.parent_hash,
+            number: U64::from(block.number),
+            state_root: block.state_root,
+            transactions_root: B256::ZERO,
+            receipts_root: B256::ZERO,
+            logs_bloom: Bytes::new(),
+            timestamp: U64::from(block.timestamp),
+            gas_limit: U64::from(block.gas_limit),
+            gas_used: U64::from(block.gas_used),
+            extra_data: Bytes::new(),
+            mix_hash: B256::ZERO,
+            nonce: Default::default(),
+            base_fee_per_gas: block.base_fee_per_gas.map(U256::from),
+            miner: Address::ZERO,
+            difficulty: U256::ZERO,
+            total_difficulty: U256::ZERO,
+            uncles: vec![],
+            size: U64::ZERO,
+            transactions,
+        }
+    }
+
     fn resolve_block_number(&self, block: &BlockNumberOrTag) -> Result<u64, RpcError> {
         match block {
             BlockNumberOrTag::Number(n) => Ok(n.to::<u64>()),
@@ -281,31 +326,6 @@ fn state_error_to_rpc(err: StateDbError) -> RpcError {
         StateDbError::Storage(msg) => RpcError::StateError(msg),
         StateDbError::LockPoisoned => RpcError::Internal("lock poisoned".to_string()),
         StateDbError::RootComputation(msg) => RpcError::StateError(msg),
-    }
-}
-
-fn indexed_block_to_rpc(block: IndexedBlock) -> RpcBlock {
-    RpcBlock {
-        hash: block.hash,
-        parent_hash: block.parent_hash,
-        number: U64::from(block.number),
-        state_root: block.state_root,
-        transactions_root: B256::ZERO,
-        receipts_root: B256::ZERO,
-        logs_bloom: Bytes::new(),
-        timestamp: U64::from(block.timestamp),
-        gas_limit: U64::from(block.gas_limit),
-        gas_used: U64::from(block.gas_used),
-        extra_data: Bytes::new(),
-        mix_hash: B256::ZERO,
-        nonce: Default::default(),
-        base_fee_per_gas: block.base_fee_per_gas.map(U256::from),
-        miner: Address::ZERO,
-        difficulty: U256::ZERO,
-        total_difficulty: U256::ZERO,
-        uncles: vec![],
-        size: U64::ZERO,
-        transactions: BlockTransactions::Hashes(block.transaction_hashes),
     }
 }
 
@@ -398,6 +418,31 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct MissingAccountState;
+
+    impl StateDbRead for MissingAccountState {
+        async fn nonce(&self, _address: &Address) -> Result<u64, StateDbError> {
+            Err(StateDbError::AccountNotFound(Address::ZERO))
+        }
+
+        async fn balance(&self, _address: &Address) -> Result<U256, StateDbError> {
+            Err(StateDbError::AccountNotFound(Address::ZERO))
+        }
+
+        async fn code_hash(&self, address: &Address) -> Result<B256, StateDbError> {
+            Err(StateDbError::AccountNotFound(*address))
+        }
+
+        async fn code(&self, _code_hash: &B256) -> Result<Bytes, StateDbError> {
+            Err(StateDbError::CodeNotFound(B256::ZERO))
+        }
+
+        async fn storage(&self, _address: &Address, _slot: &U256) -> Result<U256, StateDbError> {
+            Err(StateDbError::AccountNotFound(Address::ZERO))
+        }
+    }
+
     fn create_test_block(number: u64, hash: B256) -> IndexedBlock {
         IndexedBlock {
             hash,
@@ -475,7 +520,8 @@ mod tests {
 
         let provider = IndexedStateProvider::with_chain_id(index, MockState, 1337);
 
-        let block = provider.block_by_number(BlockNumberOrTag::Number(U64::from(1))).await.unwrap();
+        let block =
+            provider.block_by_number(BlockNumberOrTag::Number(U64::from(1)), false).await.unwrap();
         assert!(block.is_some());
         assert_eq!(block.unwrap().hash, block_hash);
     }
@@ -488,9 +534,41 @@ mod tests {
 
         let provider = IndexedStateProvider::with_chain_id(index, MockState, 1337);
 
-        let block = provider.block_by_hash(block_hash).await.unwrap();
+        let block = provider.block_by_hash(block_hash, false).await.unwrap();
         assert!(block.is_some());
         assert_eq!(block.unwrap().number, U64::from(1));
+    }
+
+    #[tokio::test]
+    async fn test_block_by_number_full_transactions() {
+        let index = Arc::new(BlockIndex::new());
+        let block_hash = B256::repeat_byte(1);
+        let tx_hash = B256::repeat_byte(2);
+        let mut block = create_test_block(1, block_hash);
+        block.transaction_hashes = vec![tx_hash];
+        index.insert_block(block, vec![create_test_tx(tx_hash, block_hash, 1)], vec![]);
+
+        let provider = IndexedStateProvider::with_chain_id(index, MockState, 1337);
+
+        let block =
+            provider.block_by_number(BlockNumberOrTag::Number(U64::from(1)), true).await.unwrap();
+        let block = block.expect("block should exist");
+        match block.transactions {
+            BlockTransactions::Full(txs) => {
+                assert_eq!(txs.len(), 1);
+                assert_eq!(txs[0].hash, tx_hash);
+            }
+            BlockTransactions::Hashes(_) => panic!("expected full transactions"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_code_missing_account_returns_empty() {
+        let index = Arc::new(BlockIndex::new());
+        let provider = IndexedStateProvider::with_chain_id(index, MissingAccountState, 1337);
+
+        let code = provider.code(Address::repeat_byte(0xaa), None).await.unwrap();
+        assert!(code.is_empty());
     }
 
     #[tokio::test]
@@ -550,12 +628,14 @@ mod tests {
         let provider = IndexedStateProvider::with_chain_id(index, MockState, 1337);
 
         let block =
-            provider.block_by_number(BlockNumberOrTag::Tag(BlockTag::Latest)).await.unwrap();
+            provider.block_by_number(BlockNumberOrTag::Tag(BlockTag::Latest), false).await.unwrap();
         assert!(block.is_some());
         assert_eq!(block.unwrap().number, U64::from(10));
 
-        let block =
-            provider.block_by_number(BlockNumberOrTag::Tag(BlockTag::Earliest)).await.unwrap();
+        let block = provider
+            .block_by_number(BlockNumberOrTag::Tag(BlockTag::Earliest), false)
+            .await
+            .unwrap();
         assert!(block.is_none());
     }
 }

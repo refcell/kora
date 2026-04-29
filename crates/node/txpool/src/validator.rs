@@ -94,6 +94,10 @@ impl<S: StateDbRead> TransactionValidator<S> {
         if nonce < state_nonce {
             return Err(TxPoolError::NonceTooLow { got: nonce, expected: state_nonce });
         }
+        let max_accepted_nonce = state_nonce.saturating_add(self.config.max_txs_per_sender as u64);
+        if nonce > max_accepted_nonce {
+            return Err(TxPoolError::NonceGap { got: nonce, expected: state_nonce });
+        }
 
         let max_cost = max_tx_cost(&envelope);
         let balance = self
@@ -509,6 +513,21 @@ mod tests {
 
         let result = validator.validate(raw_tx).await;
         assert!(matches!(result, Err(TxPoolError::NonceTooLow { got: 0, expected: 5 })));
+    }
+
+    #[tokio::test]
+    async fn reject_far_future_nonce() {
+        let chain_id = 1u64;
+        let (sender, _, raw_tx) =
+            sign_eip1559_tx(chain_id, 100, 21000, 1_000_000_000, U256::ZERO, Some(Address::ZERO));
+
+        let state =
+            MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000_000_000u64));
+        let config = PoolConfig::default().with_max_txs_per_sender(16);
+        let validator = TransactionValidator::new(chain_id, state, config);
+
+        let result = validator.validate(raw_tx).await;
+        assert!(matches!(result, Err(TxPoolError::NonceGap { got: 100, expected: 0 })));
     }
 
     #[tokio::test]

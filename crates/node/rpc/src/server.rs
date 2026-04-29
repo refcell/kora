@@ -78,6 +78,7 @@ pub struct RpcServer<S: StateProvider = NoopStateProvider> {
     state_provider: S,
     cors_config: CorsConfig,
     max_connections: u32,
+    peer_count: u64,
 }
 
 impl<S: StateProvider> std::fmt::Debug for RpcServer<S> {
@@ -111,6 +112,7 @@ impl RpcServer<NoopStateProvider> {
             state_provider: NoopStateProvider,
             cors_config: CorsConfig::default(),
             max_connections: 100,
+            peer_count: 0,
         }
     }
 
@@ -125,6 +127,7 @@ impl RpcServer<NoopStateProvider> {
             state_provider: NoopStateProvider,
             cors_config: CorsConfig::default(),
             max_connections: 100,
+            peer_count: 0,
         }
     }
 }
@@ -146,6 +149,7 @@ impl<S: StateProvider + Clone + 'static> RpcServer<S> {
             state_provider,
             cors_config: CorsConfig::default(),
             max_connections: 100,
+            peer_count: 0,
         }
     }
 
@@ -170,6 +174,13 @@ impl<S: StateProvider + Clone + 'static> RpcServer<S> {
         self
     }
 
+    /// Set the initially reported peer count for `net_peerCount`.
+    #[must_use]
+    pub const fn with_peer_count(mut self, peer_count: u64) -> Self {
+        self.peer_count = peer_count;
+        self
+    }
+
     /// Create from configuration.
     pub fn from_config(state: NodeState, config: RpcServerConfig, state_provider: S) -> Self {
         Self {
@@ -181,6 +192,7 @@ impl<S: StateProvider + Clone + 'static> RpcServer<S> {
             state_provider,
             cors_config: config.cors,
             max_connections: config.max_connections,
+            peer_count: 0,
         }
     }
 
@@ -197,6 +209,7 @@ impl<S: StateProvider + Clone + 'static> RpcServer<S> {
         let cors_layer = build_cors_layer(&self.cors_config);
         let max_connections = self.max_connections;
         let state_provider = self.state_provider;
+        let peer_count = self.peer_count;
 
         let http_handle = tokio::spawn(async move {
             let app = Router::new()
@@ -239,6 +252,7 @@ impl<S: StateProvider + Clone + 'static> RpcServer<S> {
                 |submit| EthApiImpl::with_tx_submit(chain_id, state_provider.clone(), submit),
             );
             let net_api = NetApiImpl::new(chain_id);
+            net_api.set_peer_count(peer_count);
             let web3_api = Web3ApiImpl::new();
             let kora_api = KoraApiImpl::new(node_state_for_jsonrpc);
 
@@ -312,6 +326,7 @@ pub struct JsonRpcServer<S: StateProvider = NoopStateProvider> {
     tx_submit: Option<TxSubmitCallback>,
     state_provider: S,
     max_connections: u32,
+    peer_count: u64,
 }
 
 impl<S: StateProvider> std::fmt::Debug for JsonRpcServer<S> {
@@ -333,6 +348,7 @@ impl JsonRpcServer<NoopStateProvider> {
             tx_submit: None,
             state_provider: NoopStateProvider,
             max_connections: 100,
+            peer_count: 0,
         }
     }
 }
@@ -340,7 +356,14 @@ impl JsonRpcServer<NoopStateProvider> {
 impl<S: StateProvider + Clone + 'static> JsonRpcServer<S> {
     /// Create a new JSON-RPC server with a custom state provider.
     pub fn with_state_provider(addr: SocketAddr, chain_id: u64, state_provider: S) -> Self {
-        Self { addr, chain_id, tx_submit: None, state_provider, max_connections: 100 }
+        Self {
+            addr,
+            chain_id,
+            tx_submit: None,
+            state_provider,
+            max_connections: 100,
+            peer_count: 0,
+        }
     }
 
     /// Set the transaction submission callback.
@@ -357,6 +380,13 @@ impl<S: StateProvider + Clone + 'static> JsonRpcServer<S> {
         self
     }
 
+    /// Set the initially reported peer count for `net_peerCount`.
+    #[must_use]
+    pub const fn with_peer_count(mut self, peer_count: u64) -> Self {
+        self.peer_count = peer_count;
+        self
+    }
+
     /// Start the JSON-RPC server.
     pub async fn start(self) -> Result<ServerHandle, ServerError> {
         let server = Server::builder()
@@ -370,6 +400,7 @@ impl<S: StateProvider + Clone + 'static> JsonRpcServer<S> {
             |submit| EthApiImpl::with_tx_submit(self.chain_id, self.state_provider.clone(), submit),
         );
         let net_api = NetApiImpl::new(self.chain_id);
+        net_api.set_peer_count(self.peer_count);
         let web3_api = Web3ApiImpl::new();
 
         let mut module = jsonrpsee::RpcModule::new(());

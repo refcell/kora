@@ -18,7 +18,7 @@ use commonware_parallel::Sequential;
 use commonware_runtime::{Metrics as _, Spawner, buffer::paged::CacheRef, tokio};
 use commonware_utils::{NZU64, NZUsize, acknowledgement::Exact, ordered::Set};
 use futures::StreamExt;
-use kora_domain::{Block, BlockCfg, BootstrapConfig, ConsensusDigest, LedgerEvent, TxCfg};
+use kora_domain::{Block, BlockCfg, BootstrapConfig, ConsensusDigest, LedgerEvent, Tx, TxCfg};
 use kora_executor::{BlockContext, RevmExecutor};
 use kora_ledger::{LedgerService, LedgerView};
 use kora_marshal::{ArchiveInitializer, BroadcastInitializer, PeerInitializer};
@@ -26,6 +26,7 @@ use kora_reporters::{BlockContextProvider, FinalizedReporter, NodeStateReporter,
 use kora_service::{NodeRunContext, NodeRunner};
 use kora_simplex::{DEFAULT_MAILBOX_SIZE as MAILBOX_SIZE, DefaultPool};
 use kora_transport::NetworkTransport;
+use kora_txpool::{PoolConfig, TransactionValidator};
 use tracing::{debug, info, trace};
 
 use crate::{RevmApplication, RunnerError, scheme::ThresholdScheme};
@@ -222,6 +223,9 @@ impl NodeRunner for ProductionRunner {
 
         let block_index =
             self.rpc_config.as_ref().map(|_| Arc::new(kora_indexer::BlockIndex::new()));
+        let ledger = LedgerService::new(state.clone());
+        spawn_ledger_observers(ledger.clone(), context.clone());
+
         if let Some((node_state, addr)) = &self.rpc_config {
             let qmdb_state = state.qmdb_state().await;
             let rpc_executor = Arc::new(RevmExecutor::new(self.chain_id));
@@ -230,18 +234,40 @@ impl NodeRunner for ProductionRunner {
                 qmdb_state,
                 rpc_executor,
             );
+            let tx_ledger = ledger.clone();
+            let tx_state = state.qmdb_state().await;
+            let chain_id = self.chain_id;
+            let tx_submit: kora_rpc::TxSubmitCallback = Arc::new(move |data| {
+                let ledger = tx_ledger.clone();
+                let state = tx_state.clone();
+                Box::pin(async move {
+                    let tx = Tx::new(data);
+                    let validator =
+                        TransactionValidator::new(chain_id, state, PoolConfig::default());
+                    validator
+                        .validate(tx.clone())
+                        .await
+                        .map_err(|err| kora_rpc::RpcError::InvalidTransaction(err.to_string()))?;
+                    if ledger.submit_tx(tx).await {
+                        Ok(())
+                    } else {
+                        Err(kora_rpc::RpcError::InvalidTransaction(
+                            "transaction rejected by mempool".to_string(),
+                        ))
+                    }
+                })
+            });
             let rpc = kora_rpc::RpcServer::with_state_provider(
                 node_state.clone(),
                 *addr,
                 self.chain_id,
                 indexed_provider,
-            );
+            )
+            .with_tx_submit(tx_submit)
+            .with_peer_count(self.scheme.participants().len().saturating_sub(1) as u64);
             drop(rpc.start());
             info!(addr = %addr, "RPC server started with live state provider");
         }
-
-        let ledger = LedgerService::new(state.clone());
-        spawn_ledger_observers(ledger.clone(), context.clone());
 
         let validator_key = config
             .validator_key()

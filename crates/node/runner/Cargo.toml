@@ -23,6 +23,7 @@ kora-rpc.workspace = true
 kora-service.workspace = true
 kora-simplex.workspace = true
 kora-transport.workspace = true
+kora-txpool.workspace = true
 
 commonware-codec.workspace = true
 commonware-consensus.workspace = true

@@ -4,8 +4,11 @@ use alloy_primitives::B256;
 use async_trait::async_trait;
 use commonware_codec::RangeCfg;
 use commonware_cryptography::sha256::Digest as QmdbDigest;
-use commonware_runtime::{Metrics as _, buffer::PoolRef};
-use commonware_storage::{qmdb::any::VariableConfig, translator::EightCap};
+use commonware_runtime::{Metrics as _, buffer::paged::CacheRef};
+use commonware_storage::{
+    journal::contiguous::variable::Config as JournalConfig,
+    merkle::journaled::Config as MerkleConfig, qmdb::any::VariableConfig, translator::EightCap,
+};
 use commonware_utils::{NZU64, NZUsize};
 use kora_handlers::{HandleError, RootProvider};
 use kora_qmdb::{ChangeSet, QmdbStore, StateRoot};
@@ -170,36 +173,43 @@ struct DirtyStores {
 fn store_config<C>(
     prefix: &str,
     name: &str,
-    buffer_pool: PoolRef,
+    page_cache: CacheRef,
     log_codec_config: C,
-) -> VariableConfig<EightCap, C> {
+) -> VariableConfig<EightCap, ((), C)> {
     VariableConfig {
-        mmr_journal_partition: format!("{prefix}-{name}-mmr"),
-        mmr_metadata_partition: format!("{prefix}-{name}-mmr-meta"),
-        mmr_items_per_blob: NZU64!(128),
-        mmr_write_buffer: NZUsize!(1024 * 1024),
-        log_partition: format!("{prefix}-{name}-log"),
-        log_write_buffer: NZUsize!(1024 * 1024),
-        log_compression: None,
-        log_codec_config,
-        log_items_per_blob: NZU64!(128),
+        merkle_config: MerkleConfig {
+            journal_partition: format!("{prefix}-{name}-mmr"),
+            metadata_partition: format!("{prefix}-{name}-mmr-meta"),
+            items_per_blob: NZU64!(128),
+            write_buffer: NZUsize!(1024 * 1024),
+            thread_pool: None,
+            page_cache: page_cache.clone(),
+        },
+        journal_config: JournalConfig {
+            partition: format!("{prefix}-{name}-log"),
+            items_per_section: NZU64!(128),
+            compression: None,
+            codec_config: ((), log_codec_config),
+            page_cache,
+            write_buffer: NZUsize!(1024 * 1024),
+        },
         translator: EightCap,
-        thread_pool: None,
-        buffer_pool,
     }
 }
 
 async fn open_stores(context: Context, config: &QmdbBackendConfig) -> Result<Stores, BackendError> {
+    let page_cache = CacheRef::from_pooler(&context, config.page_size, config.page_cache_size);
+
     let accounts = AccountStore::init(
         context.with_label("accounts"),
-        store_config(&config.partition_prefix, "accounts", config.buffer_pool.clone(), ()),
+        store_config(&config.partition_prefix, "accounts", page_cache.clone(), ()),
     )
     .await
     .map_err(|e| BackendError::Storage(e.to_string()))?;
 
     let storage = StorageStore::init(
         context.with_label("storage"),
-        store_config(&config.partition_prefix, "storage", config.buffer_pool.clone(), ()),
+        store_config(&config.partition_prefix, "storage", page_cache.clone(), ()),
     )
     .await
     .map_err(|e| BackendError::Storage(e.to_string()))?;
@@ -209,7 +219,7 @@ async fn open_stores(context: Context, config: &QmdbBackendConfig) -> Result<Sto
         store_config(
             &config.partition_prefix,
             "code",
-            config.buffer_pool.clone(),
+            page_cache,
             (RangeCfg::new(0..=CODE_MAX_BYTES), ()),
         ),
     )

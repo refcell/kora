@@ -109,11 +109,54 @@ print_endpoints() {
     echo ""
     echo -e "${BOLD}Endpoints${NC}"
     echo -e "  ${DIM}P2P:${NC}        localhost:30400-30403"
+    echo -e "  ${DIM}Secondary:${NC}  localhost:30500"
     echo -e "  ${DIM}Prometheus:${NC} http://localhost:9090"
     echo -e "  ${DIM}Grafana:${NC}    http://localhost:3000"
     echo ""
     echo -e "${DIM}Run 'just devnet-stats' for live monitoring${NC}"
     echo ""
+}
+
+check_dkg_outputs() {
+    local expected_checksum=""
+
+    for i in 0 1 2 3; do
+        local volume="kora-devnet_data_node${i}"
+
+        if ! docker volume inspect "$volume" >/dev/null 2>&1; then
+            return 1
+        fi
+
+        if ! docker run --rm -v "${volume}:/data" alpine \
+            test -f /data/share.key -a -f /data/output.json >/dev/null 2>&1; then
+            return 1
+        fi
+
+        local checksum
+        checksum=$(docker run --rm -v "${volume}:/data" alpine \
+            sha256sum /data/output.json 2>/dev/null | awk '{print $1}')
+
+        if [[ -z "$checksum" ]]; then
+            return 1
+        fi
+
+        if [[ -z "$expected_checksum" ]]; then
+            expected_checksum="$checksum"
+        elif [[ "$checksum" != "$expected_checksum" ]]; then
+            return 1
+        fi
+    done
+
+    return 0
+}
+
+clear_dkg_outputs() {
+    for i in 0 1 2 3; do
+        local volume="kora-devnet_data_node${i}"
+        docker volume inspect "$volume" >/dev/null 2>&1 || continue
+        docker run --rm -v "${volume}:/data" alpine \
+            rm -f /data/share.key /data/output.json /data/dkg_state.json >/dev/null 2>&1 || true
+    done
 }
 
 cd "$(dirname "$0")/.."
@@ -135,11 +178,15 @@ SHARES_EXIST=false
 
 docker volume inspect kora-devnet_shared_config >/dev/null 2>&1 && \
     docker run --rm -v kora-devnet_shared_config:/shared alpine test -f /shared/peers.json 2>/dev/null && \
+    docker volume inspect kora-devnet_data_secondary0 >/dev/null 2>&1 && \
+    docker run --rm -v kora-devnet_data_secondary0:/data alpine test -f /data/validator.key 2>/dev/null && \
     CONFIG_EXISTS=true
 
-docker volume inspect kora-devnet_data_node0 >/dev/null 2>&1 && \
-    docker run --rm -v kora-devnet_data_node0:/data alpine test -f /data/share.key 2>/dev/null && \
+if check_dkg_outputs; then
     SHARES_EXIST=true
+else
+    clear_dkg_outputs
+fi
 
 echo ""
 
@@ -171,6 +218,11 @@ if [[ "$INTERACTIVE_DKG" == "true" ]]; then
     if [[ "$SHARES_EXIST" != "true" ]]; then
         echo ""
         print_phase "1.5/3" "Interactive DKG Ceremony"
+
+        # DKG jobs use the same node0..node3 hostnames as validators. Stop validators first so
+        # Docker DNS cannot route ceremony traffic to stale validator containers.
+        docker compose -f compose/devnet.yaml stop \
+            validator-node0 validator-node1 validator-node2 validator-node3 >/dev/null 2>&1 || true
         
         # Start DKG nodes
         run_with_spinner "Starting DKG nodes..." docker compose -f compose/devnet.yaml --profile interactive-dkg up -d \
@@ -222,7 +274,15 @@ if [[ "$INTERACTIVE_DKG" == "true" ]]; then
     fi
 else
     if [[ "$SHARES_EXIST" != "true" ]]; then
-        print_success "Threshold shares generated (trusted dealer)"
+        echo ""
+        print_phase "1.5/3" "Trusted Dealer DKG"
+
+        if run_with_spinner "Generating threshold shares..." docker compose -f compose/devnet.yaml run --rm init-config; then
+            print_success "Threshold shares generated"
+        else
+            print_error "Trusted dealer DKG failed"
+            exit 1
+        fi
     else
         print_skip "Threshold shares exist"
     fi
@@ -230,11 +290,11 @@ fi
 
 echo ""
 
-# Phase 2: Validators
-print_phase "2/3" "Starting validators"
+# Phase 2: Validators and secondary peers
+print_phase "2/3" "Starting validators and secondary peers"
 
-run_with_spinner "Launching validator containers..." docker compose -f compose/devnet.yaml ${COMPOSE_PROFILES:+--profile observability} up -d \
-    validator-node0 validator-node1 validator-node2 validator-node3 \
+run_with_spinner "Launching validator and secondary containers..." docker compose -f compose/devnet.yaml ${COMPOSE_PROFILES:+--profile observability} up -d \
+    validator-node0 validator-node1 validator-node2 validator-node3 secondary-node0 \
     ${COMPOSE_PROFILES:+prometheus grafana}
 
 # Wait for validators with spinner
@@ -263,6 +323,31 @@ while true; do
     sleep 0.15
 done
 
+start_time=$(date +%s)
+timeout=120
+
+while true; do
+    SECONDARY_HEALTH=$(docker compose -f compose/devnet.yaml ps --format json 2>/dev/null | \
+        jq -r 'select(.Service == "secondary-node0") | .Health' 2>/dev/null || echo "unknown")
+
+    elapsed=$(($(date +%s) - start_time))
+
+    if [[ "$SECONDARY_HEALTH" == "healthy" ]]; then
+        clear_line
+        print_success "Secondary peer healthy"
+        break
+    fi
+
+    if [[ "$elapsed" -ge "$timeout" ]]; then
+        clear_line
+        print_error "Timeout waiting for secondary peer"
+        exit 1
+    fi
+
+    spinner "Waiting for secondary peer... (${SECONDARY_HEALTH:-unknown}, ${elapsed}s)"
+    sleep 0.15
+done
+
 echo ""
 
 # Phase 3: Ready
@@ -285,6 +370,17 @@ for i in 0 1 2 3; do
     
     printf "  ${GREEN}│${NC} node%-6s ${GREEN}│${NC} %b ${GREEN}│${NC} 3040%-3s ${GREEN}│${NC}\n" "$i" "$status_str" "$i"
 done
+
+secondary_status=$(docker compose -f compose/devnet.yaml ps --format json 2>/dev/null | \
+    jq -r 'select(.Service == "secondary-node0") | .Health' 2>/dev/null || echo "unknown")
+
+if [[ "$secondary_status" == "healthy" ]]; then
+    secondary_status_str="${GREEN}healthy${NC}    "
+else
+    secondary_status_str="${YELLOW}${secondary_status}${NC}"
+fi
+
+printf "  ${GREEN}│${NC} secondary0 ${GREEN}│${NC} %b ${GREEN}│${NC} 30500   ${GREEN}│${NC}\n" "$secondary_status_str"
 
 echo -e "  ${GREEN}└────────────┴────────────┴─────────┘${NC}"
 

@@ -101,6 +101,30 @@ impl commonware_runtime::Metrics for SimContext {
         }
     }
 
+    fn with_attribute(&self, key: &str, value: impl fmt::Display) -> Self {
+        Self {
+            inner: self.inner.with_attribute(key, value),
+            force_base_addr: false,
+            port_offset: self.port_offset,
+        }
+    }
+
+    fn with_scope(&self) -> Self {
+        Self {
+            inner: self.inner.with_scope(),
+            force_base_addr: false,
+            port_offset: self.port_offset,
+        }
+    }
+
+    fn with_span(&self) -> Self {
+        Self {
+            inner: self.inner.with_span(),
+            force_base_addr: false,
+            port_offset: self.port_offset,
+        }
+    }
+
     fn register<N: Into<String>, H: Into<String>>(&self, name: N, help: H, metric: impl Metric) {
         self.inner.register(name, help, metric);
     }
@@ -118,11 +142,6 @@ impl commonware_runtime::Spawner for SimContext {
 
     fn dedicated(mut self) -> Self {
         self.inner = self.inner.dedicated();
-        self
-    }
-
-    fn instrumented(mut self) -> Self {
-        self.inner = self.inner.instrumented();
         self
     }
 

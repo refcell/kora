@@ -48,6 +48,7 @@ fn test_participant_creation() {
 
     assert_eq!(participant.dealer_log_count(), 0);
     assert_eq!(participant.required_quorum(), 3); // n=4, f=1, quorum=3
+    assert_eq!(participant.required_dealer_logs(), 4);
     assert!(!participant.can_finalize());
 
     // Verify session was created
@@ -230,6 +231,20 @@ fn test_local_dkg_simulation() {
         }
     }
 
+    // A quorum-sized subset is not sufficient for the initial ceremony: every validator
+    // must finalize over the same dealer set or they can derive different group keys.
+    for (from_idx, _, msg) in &dealer_logs {
+        if *from_idx != 0 {
+            let from_pk = keys[*from_idx].public_key();
+            let _ = participants[0].handle_message(&from_pk, msg.clone());
+            if participants[0].dealer_log_count() >= participants[0].required_quorum() {
+                break;
+            }
+        }
+    }
+    assert_eq!(participants[0].dealer_log_count(), participants[0].required_quorum());
+    assert!(!participants[0].can_finalize());
+
     // Deliver dealer logs to all
     for (from_idx, _, msg) in dealer_logs {
         let from_pk = keys[from_idx].public_key();
@@ -245,7 +260,7 @@ fn test_local_dkg_simulation() {
             "participant {} should be able to finalize (has {} logs, needs {})",
             i,
             p.dealer_log_count(),
-            p.required_quorum()
+            p.required_dealer_logs()
         );
     }
 

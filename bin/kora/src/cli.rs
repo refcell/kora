@@ -31,6 +31,7 @@ pub(crate) struct Cli {
 pub(crate) enum Commands {
     Dkg(DkgArgs),
     Validator(ValidatorArgs),
+    Secondary(SecondaryArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -48,6 +49,13 @@ pub(crate) struct DkgArgs {
 pub(crate) struct ValidatorArgs {
     #[arg(long)]
     pub peers: Option<PathBuf>,
+}
+
+#[derive(clap::Args, Debug)]
+pub(crate) struct SecondaryArgs {
+    /// Path to peers.json file containing primary and secondary peer information.
+    #[arg(long)]
+    pub peers: PathBuf,
 }
 
 impl Cli {
@@ -68,6 +76,7 @@ impl Cli {
         match &self.command {
             Some(Commands::Dkg(args)) => self.run_dkg(args),
             Some(Commands::Validator(args)) => self.run_validator(args),
+            Some(Commands::Secondary(args)) => self.run_secondary(args),
             None => self.run_legacy(),
         }
     }
@@ -132,17 +141,16 @@ impl Cli {
             .map_err(|e| eyre::eyre!("Failed to load threshold scheme: {}", e))?;
         tracing::info!("Loaded threshold signing scheme");
 
+        let mut secondary_participants = Vec::new();
         if let Some(ref peers_path) = args.peers {
             let peers = load_peers(peers_path)?;
-            config.network.bootstrap_peers = peers
-                .bootstrappers
-                .iter()
-                .map(|(pk, addr)| format!("{}@{}", hex::encode(pk.as_ref()), addr))
-                .collect();
+            config.network.bootstrap_peers = format_bootstrappers(&peers.bootstrappers);
             tracing::info!(
                 bootstrap_peers = config.network.bootstrap_peers.len(),
                 "Loaded bootstrap peers from peers.json"
             );
+
+            secondary_participants = peers.secondary_participants;
         }
 
         let genesis_path = config.data_dir.join("genesis.json");
@@ -159,9 +167,60 @@ impl Cli {
             kora_config::DEFAULT_GAS_LIMIT,
             bootstrap,
         )
-        .with_rpc(node_state, rpc_addr);
+        .with_rpc(node_state, rpc_addr)
+        .with_secondary_peers(secondary_participants);
 
         runner.run_standalone(config).map_err(|e| eyre::eyre!("Runner failed: {}", e.0))
+    }
+
+    fn run_secondary(&self, args: &SecondaryArgs) -> eyre::Result<()> {
+        use commonware_p2p::{Manager, TrackedPeers};
+        use commonware_runtime::Runner;
+        use commonware_utils::ordered::Set;
+        use kora_transport::NetworkConfigExt;
+
+        let mut config = self.load_config()?;
+        let peers = load_peers(&args.peers)?;
+        config.network.bootstrap_peers = format_bootstrappers(&peers.bootstrappers);
+
+        let identity_key = config.validator_key()?;
+        let my_pk = commonware_cryptography::Signer::public_key(&identity_key);
+        if !peers.secondary_participants.contains(&my_pk) {
+            return Err(eyre::eyre!(
+                "secondary identity is not listed in peers.json secondary_participants"
+            ));
+        }
+
+        tracing::info!(
+            chain_id = config.chain_id,
+            bootstrap_peers = config.network.bootstrap_peers.len(),
+            secondary_peers = peers.secondary_participants.len(),
+            "Starting secondary peer"
+        );
+
+        let executor = commonware_runtime::tokio::Runner::default();
+        executor.start(|context| async move {
+            let mut transport = config
+                .network
+                .build_local_transport(identity_key, context.clone())
+                .map_err(|e| eyre::eyre!("failed to build transport: {}", e))?;
+
+            transport
+                .oracle
+                .track(
+                    0,
+                    TrackedPeers::new(
+                        Set::from_iter_dedup(peers.participants),
+                        Set::from_iter_dedup(peers.secondary_participants),
+                    ),
+                )
+                .await;
+
+            tracing::info!("secondary peer joined network");
+            futures::future::pending::<()>().await;
+            #[allow(unreachable_code)]
+            Ok::<(), eyre::Error>(())
+        })
     }
 
     fn run_legacy(&self) -> eyre::Result<()> {
@@ -177,8 +236,18 @@ impl Cli {
 #[derive(Debug)]
 struct PeersInfo {
     participants: Vec<commonware_cryptography::ed25519::PublicKey>,
+    secondary_participants: Vec<commonware_cryptography::ed25519::PublicKey>,
     threshold: u32,
     bootstrappers: Vec<(commonware_cryptography::ed25519::PublicKey, String)>,
+}
+
+fn format_bootstrappers(
+    bootstrappers: &[(commonware_cryptography::ed25519::PublicKey, String)],
+) -> Vec<String> {
+    bootstrappers
+        .iter()
+        .map(|(pk, addr)| format!("{}@{}", hex::encode(pk.as_ref()), addr))
+        .collect()
 }
 
 fn load_peers(path: &PathBuf) -> eyre::Result<PeersInfo> {
@@ -197,12 +266,15 @@ fn load_peers(path: &PathBuf) -> eyre::Result<PeersInfo> {
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
 
-    let mut participants = Vec::with_capacity(participants_hex.len());
-    for pk_hex in &participants_hex {
-        let bytes = hex::decode(pk_hex)?;
-        let pk = commonware_cryptography::ed25519::PublicKey::read(&mut bytes.as_slice())?;
-        participants.push(pk);
-    }
+    let participants = parse_public_keys(&participants_hex)?;
+
+    let secondary_participants_hex: Vec<String> = json["secondary_participants"]
+        .as_array()
+        .map(|participants| {
+            participants.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+        })
+        .unwrap_or_default();
+    let secondary_participants = parse_public_keys(&secondary_participants_hex)?;
 
     let bootstrappers_obj =
         json["bootstrappers"].as_object().ok_or_else(|| eyre::eyre!("missing bootstrappers"))?;
@@ -215,5 +287,20 @@ fn load_peers(path: &PathBuf) -> eyre::Result<PeersInfo> {
         bootstrappers.push((pk, addr_str.to_string()));
     }
 
-    Ok(PeersInfo { participants, threshold, bootstrappers })
+    Ok(PeersInfo { participants, secondary_participants, threshold, bootstrappers })
+}
+
+fn parse_public_keys(
+    keys: &[String],
+) -> eyre::Result<Vec<commonware_cryptography::ed25519::PublicKey>> {
+    use commonware_codec::ReadExt;
+
+    let mut public_keys = Vec::with_capacity(keys.len());
+    for pk_hex in keys {
+        let bytes = hex::decode(pk_hex)?;
+        let pk = commonware_cryptography::ed25519::PublicKey::read(&mut bytes.as_slice())?;
+        public_keys.push(pk);
+    }
+
+    Ok(public_keys)
 }

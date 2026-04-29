@@ -14,6 +14,9 @@ pub(crate) struct SetupArgs {
     #[arg(long, default_value = "4")]
     pub validators: usize,
 
+    #[arg(long, default_value = "0")]
+    pub secondary_peers: usize,
+
     #[arg(long, default_value = "3")]
     pub threshold: u32,
 
@@ -32,6 +35,7 @@ struct PeersConfig {
     validators: usize,
     threshold: u32,
     participants: Vec<String>,
+    secondary_participants: Vec<String>,
     bootstrappers: BTreeMap<String, String>,
 }
 
@@ -66,6 +70,7 @@ pub(crate) fn run(args: SetupArgs) -> Result<()> {
     fs::create_dir_all(&args.output_dir).wrap_err("Failed to create output directory")?;
 
     let mut participants = Vec::with_capacity(args.validators);
+    let mut secondary_participants = Vec::with_capacity(args.secondary_peers);
     let mut bootstrappers = BTreeMap::new();
 
     for i in 0..args.validators {
@@ -104,10 +109,43 @@ pub(crate) fn run(args: SetupArgs) -> Result<()> {
         tracing::info!(node = i, path = ?key_path, "Wrote identity key");
     }
 
+    for i in 0..args.secondary_peers {
+        let node_dir = args.output_dir.join(format!("secondary{}", i));
+        fs::create_dir_all(&node_dir)
+            .wrap_err_with(|| format!("Failed to create secondary{} dir", i))?;
+
+        let key_path = node_dir.join("validator.key");
+        let key = if key_path.exists() {
+            tracing::info!(node = i, "Loading existing secondary identity key");
+            let bytes = fs::read(&key_path)?;
+            let mut seed = [0u8; 32];
+            seed.copy_from_slice(&bytes);
+            ed25519::PrivateKey::from(ed25519_consensus::SigningKey::from(seed))
+        } else {
+            tracing::info!(node = i, "Generating new secondary identity key");
+            let mut seed = [0u8; 32];
+            rand::rngs::OsRng.fill_bytes(&mut seed);
+            fs::write(&key_path, seed)?;
+            ed25519::PrivateKey::from(ed25519_consensus::SigningKey::from(seed))
+        };
+
+        let public_key = key.public_key();
+        let pk_hex = hex::encode(Encode::encode(&public_key));
+        secondary_participants.push(pk_hex.clone());
+
+        let node_config =
+            NodeSetupConfig { validator_index: i, public_key: pk_hex, port: args.base_port };
+        let config_path = node_dir.join("setup.json");
+        fs::write(&config_path, serde_json::to_string_pretty(&node_config)?)?;
+
+        tracing::info!(node = i, path = ?key_path, "Wrote secondary identity key");
+    }
+
     let peers = PeersConfig {
         validators: args.validators,
         threshold: args.threshold,
         participants,
+        secondary_participants,
         bootstrappers,
     };
     let peers_path = args.output_dir.join("peers.json");
@@ -157,6 +195,7 @@ pub(crate) fn run(args: SetupArgs) -> Result<()> {
 
     tracing::info!("Setup complete");
     tracing::info!("  Validators: {}", args.validators);
+    tracing::info!("  Secondary peers: {}", args.secondary_peers);
     tracing::info!("  Threshold:  {}", args.threshold);
     tracing::info!("  Chain ID:   {}", args.chain_id);
 

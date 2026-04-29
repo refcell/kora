@@ -10,7 +10,7 @@ use commonware_cryptography::{
     Hasher as _, Sha256,
     bls12381::{
         dkg::{
-            Dealer, DealerLog, DealerPrivMsg, DealerPubMsg, Info, Player, PlayerAck,
+            Dealer, DealerLog, DealerPrivMsg, DealerPubMsg, Info, Logs, Player, PlayerAck,
             SignedDealerLog,
         },
         primitives::{sharing::Mode, variant::MinSig},
@@ -419,6 +419,14 @@ impl DkgParticipant {
         self.session.ceremony_id
     }
 
+    fn logs_for_verification(&self) -> Logs<MinSig, ed25519::PublicKey, N3f1> {
+        let mut logs = Logs::new(self.info.clone());
+        for (dealer, log) in &self.dealer_logs {
+            logs.record(dealer.clone(), log.clone());
+        }
+        logs
+    }
+
     /// Start the dealer phase - generate and return messages to send.
     pub fn start_dealer(&mut self) -> Result<(), DkgError> {
         let mut rng = rand::rngs::OsRng;
@@ -754,10 +762,9 @@ impl DkgParticipant {
         self.ready_players.len()
     }
 
-    /// Check if we have enough dealer logs to finalize.
+    /// Check if we have all dealer logs needed to finalize.
     pub fn can_finalize(&self) -> bool {
-        let required = N3f1::quorum(self.config.participants.len()) as usize;
-        self.dealer_logs.len() >= required
+        self.dealer_logs.len() >= self.required_dealer_logs()
     }
 
     /// Finalize the DKG and produce output.
@@ -770,7 +777,7 @@ impl DkgParticipant {
             return Err(DkgError::CeremonyFailed(format!(
                 "Not enough dealer logs: {} < {}",
                 self.dealer_logs.len(),
-                N3f1::quorum(self.config.participants.len())
+                self.required_dealer_logs()
             )));
         }
 
@@ -806,11 +813,13 @@ impl DkgParticipant {
             "Comparing dealer log keys to config participants"
         );
 
+        let mut rng = rand::rngs::OsRng;
+
         // Debug: try to observe the logs first to understand what's failing
         use commonware_cryptography::bls12381::dkg::observe;
-        match observe::<MinSig, ed25519::PublicKey, N3f1>(
-            self.info.clone(),
-            self.dealer_logs.clone(),
+        match observe::<MinSig, ed25519::PublicKey, N3f1, ed25519::Batch>(
+            &mut rng,
+            self.logs_for_verification(),
             &Sequential,
         ) {
             Ok(observed) => {
@@ -829,8 +838,9 @@ impl DkgParticipant {
             }
         }
 
+        let logs = self.logs_for_verification();
         let (output, share) = player
-            .finalize::<N3f1>(self.dealer_logs.clone(), &Sequential)
+            .finalize::<N3f1, ed25519::Batch>(&mut rng, logs, &Sequential)
             .map_err(|e| DkgError::Crypto(format!("Failed to finalize: {:?}", e)))?;
 
         self.finalized = true;
@@ -885,6 +895,11 @@ impl DkgParticipant {
     /// Get required quorum.
     pub fn required_quorum(&self) -> usize {
         N3f1::quorum(self.config.participants.len()) as usize
+    }
+
+    /// Get the number of dealer logs required for this initial DKG ceremony.
+    pub const fn required_dealer_logs(&self) -> usize {
+        self.config.n()
     }
 
     /// Check if a public key is a participant in this DKG.

@@ -8,8 +8,7 @@ use std::future::Future;
 
 use commonware_consensus::{CertifiableAutomaton, Relay, Reporter, types::Epoch};
 use commonware_cryptography::sha256;
-use commonware_utils::channels::fallible::OneshotExt as _;
-use futures::channel::oneshot;
+use commonware_utils::channel::{fallible::OneshotExt as _, oneshot};
 
 /// Stub digest type (SHA-256).
 pub type StubDigest = sha256::Digest;
@@ -72,8 +71,14 @@ pub struct StubRelay;
 #[allow(clippy::manual_async_fn)]
 impl Relay for StubRelay {
     type Digest = StubDigest;
+    type PublicKey = StubPublicKey;
+    type Plan = ();
 
-    fn broadcast(&mut self, _payload: Self::Digest) -> impl Future<Output = ()> + Send {
+    fn broadcast(
+        &mut self,
+        _payload: Self::Digest,
+        _plan: Self::Plan,
+    ) -> impl Future<Output = ()> + Send {
         async {}
     }
 }

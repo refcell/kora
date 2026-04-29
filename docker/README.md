@@ -4,6 +4,10 @@ This directory contains Docker configurations for running a local Kora devnet wi
 - **Interactive DKG** (production-like, no single party learns the master secret)
 - **Trusted Dealer DKG** (fast, insecure, for local development)
 
+The devnet also starts one **secondary peer**. Secondary peers are authorized P2P nodes
+that follow validator traffic but are not consensus participants and do not receive DKG
+shares.
+
 ## Quick Start
 
 From the repository root:
@@ -21,13 +25,15 @@ just trusted-devnet
 2. Generate validator identity keys (init-setup)
 3. Run interactive DKG ceremony across 4 nodes
 4. Start 4 validator nodes with threshold BLS consensus
-5. Start Prometheus and Grafana for observability (optional)
+5. Start 1 secondary peer that joins through the validators
+6. Start Prometheus and Grafana for observability (optional)
 
 ### Trusted Dealer (fast)
 1. Build the Docker image
 2. Generate validator identity keys and run trusted dealer DKG (init-config)
 3. Start 4 validator nodes with threshold BLS consensus
-4. Start Prometheus and Grafana for observability (optional)
+4. Start 1 secondary peer that joins through the validators
+5. Start Prometheus and Grafana for observability (optional)
 
 ## Commands
 
@@ -92,6 +98,10 @@ Run from repository root (`just <cmd>`) or from `docker/` directory (`just <cmd>
 │    - REVM execution                                              │
 │    - QMDB state storage                                          │
 ├─────────────────────────────────────────────────────────────────┤
+│  Secondary peer (secondary-node0)                                │
+│    - Authenticated P2P participant                               │
+│    - Tracks validator traffic without joining consensus          │
+├─────────────────────────────────────────────────────────────────┤
 │  Observability (optional): prometheus + grafana                  │
 │    - Prometheus: http://localhost:9090                           │
 │    - Grafana: http://localhost:3000 (admin/admin)                │
@@ -114,6 +124,10 @@ Run from repository root (`just <cmd>`) or from `docker/` directory (`just <cmd>
 │    - REVM execution                                              │
 │    - QMDB state storage                                          │
 ├─────────────────────────────────────────────────────────────────┤
+│  Secondary peer (secondary-node0)                                │
+│    - Authenticated P2P participant                               │
+│    - Tracks validator traffic without joining consensus          │
+├─────────────────────────────────────────────────────────────────┤
 │  Observability (optional): prometheus + grafana                  │
 │    - Prometheus: http://localhost:9090                           │
 │    - Grafana: http://localhost:3000 (admin/admin)                │
@@ -130,6 +144,7 @@ Run from repository root (`just <cmd>`) or from `docker/` directory (`just <cmd>
 | validator-node1 P2P | 30401 | P2P networking |
 | validator-node2 P2P | 30402 | P2P networking |
 | validator-node3 P2P | 30403 | P2P networking |
+| secondary-node0 P2P | 30500 | Secondary P2P networking |
 | validator-node0 RPC | 8545 | JSON-RPC endpoint |
 | validator-node1 RPC | 8546 | JSON-RPC endpoint |
 | validator-node2 RPC | 8547 | JSON-RPC endpoint |
@@ -154,6 +169,45 @@ Environment variables (set in `.env` or export):
 | `IS_BOOTSTRAP` | - | Whether node is bootstrap node |
 | `BOOTSTRAP_PEERS` | - | Bootstrap peer addresses |
 | `HEALTHCHECK_MODE` | - | Health check mode (dkg, ready) |
+
+## Secondary Peers
+
+Kora follows Commonware's primary/secondary peer model. Validators are tracked as
+the primary peer set and secondary peers are tracked as followers. Primary peers
+drive consensus progress; secondary peers can establish authenticated transport
+connections and follow replicated data without signing consensus messages.
+
+The Docker devnet generates `secondary0` during setup, stores its identity in the
+`data_secondary0` volume, and lists its public key in
+`/shared/peers.json` under `secondary_participants`. Validators load that file on
+startup and call Commonware's `Manager::track` with validators as `primary` and
+`secondary0` as `secondary`.
+
+To run the built-in secondary peer:
+
+```bash
+just devnet
+
+# The secondary peer is exposed on localhost:30500
+docker compose -f docker/compose/devnet.yaml ps secondary-node0
+```
+
+To join from another process, use an identity that is already listed in
+`peers.json` under `secondary_participants`, copy the matching `validator.key`
+into the peer's data directory, and start:
+
+```bash
+kora secondary \
+  --data-dir /path/to/secondary0 \
+  --peers /path/to/peers.json \
+  --chain-id 1337
+```
+
+For a local Docker devnet, `node0:30303` is the bootstrap address inside the
+Compose network. From outside Docker, rewrite the bootstrapper address for
+`node0` in `peers.json` to the published endpoint `localhost:30400`, and keep
+the secondary peer's public key in `peers.json` before starting or restarting
+validators.
 
 ### Grafana Environment Variables
 
@@ -245,7 +299,7 @@ just logs-node validator-node0
 - Check specific node: `just logs-node validator-node0`
 
 **Port conflicts:**
-- Check if ports 30400-30403, 8545-8548, 9000-9003, 9090, or 3000 are in use
+- Check if ports 30400-30403, 30500, 8545-8548, 9000-9003, 9090, or 3000 are in use
 - Stop conflicting services or modify port mappings in `compose/devnet.yaml`
 
 **Container won't start:**

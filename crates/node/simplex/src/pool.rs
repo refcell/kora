@@ -1,6 +1,6 @@
 //! Provides a default buffer pool implementation.
 
-use commonware_runtime::buffer::PoolRef;
+use commonware_runtime::{BufferPooler, buffer::paged::CacheRef};
 use commonware_utils::{NZU16, NZUsize};
 
 /// Default page size in bytes (64 KiB).
@@ -17,11 +17,11 @@ pub const DEFAULT_POOL_CAPACITY: usize = 10_000;
 pub struct DefaultPool;
 
 impl DefaultPool {
-    /// Initializes a default [`PoolRef`].
+    /// Initializes a default [`CacheRef`].
     ///
     /// Uses a page size of 16 KiB and a capacity of 10,000 pages.
-    pub fn init() -> PoolRef {
-        PoolRef::new(NZU16!(DEFAULT_PAGE_SIZE), NZUsize!(DEFAULT_POOL_CAPACITY))
+    pub fn init(pooler: &impl BufferPooler) -> CacheRef {
+        CacheRef::from_pooler(pooler, NZU16!(DEFAULT_PAGE_SIZE), NZUsize!(DEFAULT_POOL_CAPACITY))
     }
 }
 
@@ -55,7 +55,9 @@ mod tests {
     }
 
     #[test]
-    fn pool_ref_can_be_initialized() {
-        let _pool = DefaultPool::init();
+    fn default_pool_is_constructible() {
+        let pool = DefaultPool;
+        let debug_str = format!("{:?}", pool);
+        assert!(debug_str.contains("DefaultPool"));
     }
 }

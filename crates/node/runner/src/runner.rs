@@ -5,15 +5,18 @@ use alloy_primitives::{Address, B256};
 use anyhow::Context as _;
 use commonware_consensus::{
     Reporters,
-    application::marshaled::Marshaled,
+    marshal::{
+        core::Mailbox,
+        standard::{Inline, Standard},
+    },
     simplex::{self, elector::Random, types::Finalization},
     types::{Epoch, FixedEpocher, ViewDelta},
 };
 use commonware_cryptography::{bls12381::primitives::variant::MinSig, ed25519};
-use commonware_p2p::Manager;
+use commonware_p2p::{Manager, TrackedPeers};
 use commonware_parallel::Sequential;
-use commonware_runtime::{Metrics as _, Spawner, buffer::PoolRef, tokio};
-use commonware_utils::{NZU64, NZUsize, acknowledgement::Exact};
+use commonware_runtime::{Metrics as _, Spawner, buffer::paged::CacheRef, tokio};
+use commonware_utils::{NZU64, NZUsize, acknowledgement::Exact, ordered::Set};
 use futures::StreamExt;
 use kora_domain::{Block, BlockCfg, BootstrapConfig, ConsensusDigest, LedgerEvent, TxCfg};
 use kora_executor::{BlockContext, RevmExecutor};
@@ -34,11 +37,11 @@ const PARTITION_PREFIX: &str = "kora";
 
 type Peer = ed25519::PublicKey;
 type CertArchive = Finalization<ThresholdScheme, ConsensusDigest>;
-type MarshalMailbox = commonware_consensus::marshal::Mailbox<ThresholdScheme, Block>;
+type MarshalMailbox = Mailbox<ThresholdScheme, Standard<Block>>;
 type NodeStateRptr = NodeStateReporter<ThresholdScheme>;
 
-fn default_buffer_pool() -> PoolRef {
-    DefaultPool::init()
+fn default_page_cache(context: &tokio::Context) -> CacheRef {
+    DefaultPool::init(context)
 }
 
 const fn block_codec_cfg() -> BlockCfg {
@@ -120,6 +123,8 @@ pub struct ProductionRunner {
     pub partition_prefix: String,
     /// Optional RPC configuration (state, bind address).
     pub rpc_config: Option<(kora_rpc::NodeState, std::net::SocketAddr)>,
+    /// Secondary peers authorized to follow validator traffic without participating in consensus.
+    pub secondary_peers: Vec<Peer>,
 }
 
 impl ProductionRunner {
@@ -137,6 +142,7 @@ impl ProductionRunner {
             bootstrap,
             partition_prefix: PARTITION_PREFIX.to_string(),
             rpc_config: None,
+            secondary_peers: Vec::new(),
         }
     }
 
@@ -144,6 +150,13 @@ impl ProductionRunner {
     #[must_use]
     pub fn with_rpc(mut self, state: kora_rpc::NodeState, addr: std::net::SocketAddr) -> Self {
         self.rpc_config = Some((state, addr));
+        self
+    }
+
+    /// Configure secondary peers that should be tracked by the P2P oracle.
+    #[must_use]
+    pub fn with_secondary_peers(mut self, peers: Vec<Peer>) -> Self {
+        self.secondary_peers = peers;
         self
     }
 }
@@ -187,15 +200,20 @@ impl NodeRunner for ProductionRunner {
         info!(chain_id = self.chain_id, "Starting production validator");
 
         let validators = self.scheme.participants().clone();
-        transport.oracle.update(0, validators).await;
-        info!(count = self.scheme.participants().len(), "Registered validators with oracle");
+        let secondary = Set::from_iter_dedup(self.secondary_peers.iter().cloned());
+        let secondary_count = secondary.len();
+        transport.oracle.track(0, TrackedPeers::new(validators, secondary)).await;
+        info!(
+            validators = self.scheme.participants().len(),
+            secondary_peers = secondary_count,
+            "Registered primary and secondary peers with oracle"
+        );
 
-        let buffer_pool = default_buffer_pool();
+        let page_cache = default_page_cache(&context);
         let block_cfg = block_codec_cfg();
 
         let state = LedgerView::init(
             context.with_label("state"),
-            buffer_pool.clone(),
             format!("{}-qmdb", self.partition_prefix),
             self.bootstrap.genesis_alloc.clone(),
         )
@@ -241,9 +259,10 @@ impl NodeRunner for ProductionRunner {
             transport.marshal.backfill,
         );
 
-        let (broadcast_engine, buffer) = BroadcastInitializer::init::<_, Peer, Block>(
+        let (broadcast_engine, buffer) = BroadcastInitializer::init::<_, Peer, Block, _>(
             context.with_label("broadcast"),
             my_pk.clone(),
+            transport.oracle.clone(),
             block_cfg,
         );
         broadcast_engine.start(transport.marshal.blocks);
@@ -272,7 +291,7 @@ impl NodeRunner for ProductionRunner {
                 finalizations_by_height,
                 finalized_blocks,
                 scheme_provider,
-                buffer_pool.clone(),
+                page_cache.clone(),
                 block_cfg,
             )
             .await;
@@ -290,7 +309,7 @@ impl NodeRunner for ProductionRunner {
             app = app.with_node_state(state.clone());
         }
         let marshaled =
-            Marshaled::new(context.with_label("marshaled"), app, marshal_mailbox.clone(), epocher);
+            Inline::new(context.with_label("marshaled"), app, marshal_mailbox.clone(), epocher);
 
         let seed_reporter = SeedReporter::<MinSig>::new(ledger.clone());
         let node_state_reporter = self
@@ -321,13 +340,14 @@ impl NodeRunner for ProductionRunner {
                 replay_buffer: NZUsize!(1024 * 1024),
                 write_buffer: NZUsize!(1024 * 1024),
                 leader_timeout: Duration::from_millis(500),
-                notarization_timeout: Duration::from_secs(1),
-                nullify_retry: Duration::from_secs(2),
+                certification_timeout: Duration::from_secs(1),
+                timeout_retry: Duration::from_secs(2),
                 fetch_timeout: Duration::from_millis(500),
                 activity_timeout: ViewDelta::new(20),
                 skip_timeout: ViewDelta::new(10),
                 fetch_concurrent: 8,
-                buffer_pool,
+                page_cache,
+                forwarding: simplex::ForwardingPolicy::Disabled,
             },
         );
         engine.start(transport.simplex.votes, transport.simplex.certs, transport.simplex.resolver);

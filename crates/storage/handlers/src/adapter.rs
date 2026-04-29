@@ -14,7 +14,7 @@ use revm::{
         DatabaseCommit, DatabaseRef,
         async_db::{DatabaseAsyncRef, WrapDatabaseAsync},
     },
-    primitives::HashMap,
+    primitives::AddressMap,
     state::Account,
 };
 
@@ -208,7 +208,7 @@ where
     S: QmdbGettable<Key = StorageKey, Value = U256> + QmdbBatchable<Key = StorageKey, Value = U256>,
     C: QmdbGettable<Key = B256, Value = Vec<u8>> + QmdbBatchable<Key = B256, Value = Vec<u8>>,
 {
-    fn commit(&mut self, changes: HashMap<Address, Account>) {
+    fn commit(&mut self, changes: AddressMap<Account>) {
         use std::collections::BTreeMap;
 
         use kora_qmdb::AccountUpdate;

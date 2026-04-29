@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 
 use commonware_cryptography::ed25519;
 use commonware_p2p::Ingress;
-use commonware_runtime::{Clock, Metrics, Network as RNetwork, Resolver, Spawner};
+use commonware_runtime::{BufferPooler, Clock, Metrics, Network as RNetwork, Resolver, Spawner};
 use kora_config::NetworkConfig;
 use rand_core::CryptoRngCore;
 
@@ -24,7 +24,7 @@ pub trait NetworkConfigExt {
         context: E,
     ) -> Result<NetworkTransport<ed25519::PublicKey, E>, TransportError>
     where
-        E: Spawner + Clock + CryptoRngCore + RNetwork + Resolver + Metrics;
+        E: Spawner + BufferPooler + Clock + CryptoRngCore + RNetwork + Resolver + Metrics;
 
     /// Build a production transport.
     ///
@@ -35,7 +35,7 @@ pub trait NetworkConfigExt {
         context: E,
     ) -> Result<NetworkTransport<ed25519::PublicKey, E>, TransportError>
     where
-        E: Spawner + Clock + CryptoRngCore + RNetwork + Resolver + Metrics;
+        E: Spawner + BufferPooler + Clock + CryptoRngCore + RNetwork + Resolver + Metrics;
 }
 
 impl NetworkConfigExt for NetworkConfig {
@@ -45,7 +45,7 @@ impl NetworkConfigExt for NetworkConfig {
         context: E,
     ) -> Result<NetworkTransport<ed25519::PublicKey, E>, TransportError>
     where
-        E: Spawner + Clock + CryptoRngCore + RNetwork + Resolver + Metrics,
+        E: Spawner + BufferPooler + Clock + CryptoRngCore + RNetwork + Resolver + Metrics,
     {
         let (listen_addr, dialable, bootstrappers) = parse_network_config(self)?;
 
@@ -68,7 +68,7 @@ impl NetworkConfigExt for NetworkConfig {
         context: E,
     ) -> Result<NetworkTransport<ed25519::PublicKey, E>, TransportError>
     where
-        E: Spawner + Clock + CryptoRngCore + RNetwork + Resolver + Metrics,
+        E: Spawner + BufferPooler + Clock + CryptoRngCore + RNetwork + Resolver + Metrics,
     {
         let (listen_addr, dialable, bootstrappers) = parse_network_config(self)?;
 

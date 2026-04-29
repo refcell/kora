@@ -9,7 +9,7 @@ use std::{collections::BTreeSet, fmt, sync::Arc};
 
 use alloy_primitives::{Address, B256, U256};
 use commonware_cryptography::Committable as _;
-use commonware_runtime::{Metrics as _, buffer::PoolRef, tokio};
+use commonware_runtime::{Metrics as _, tokio};
 use futures::{channel::mpsc::UnboundedReceiver, lock::Mutex};
 use kora_consensus::{
     ConsensusError, Mempool as _, SeedTracker as _, Snapshot, SnapshotStore as _,
@@ -78,11 +78,10 @@ impl LedgerView {
     /// Initialize a ledger view with a QMDB backend built from the provided settings.
     pub async fn init(
         context: tokio::Context,
-        buffer_pool: PoolRef,
         partition_prefix: String,
         genesis_alloc: Vec<(Address, U256)>,
     ) -> LedgerResult<Self> {
-        let config = QmdbConfig::new(partition_prefix, buffer_pool);
+        let config = QmdbConfig::new(partition_prefix);
         Self::init_with_config(context, config, genesis_alloc).await
     }
 
@@ -423,8 +422,7 @@ mod tests {
     use alloy_consensus::Header;
     use alloy_primitives::{Address, B256, Bytes, U256};
     use commonware_cryptography::Committable as _;
-    use commonware_runtime::{Runner, buffer::PoolRef, tokio};
-    use commonware_utils::{NZU16, NZUsize};
+    use commonware_runtime::{Runner, tokio};
     use k256::ecdsa::SigningKey;
     use kora_domain::{Block, ConsensusDigest, Tx, evm::Evm};
     use kora_executor::{BlockContext, BlockExecutor, RevmExecutor};
@@ -435,8 +433,6 @@ mod tests {
 
     static PARTITION_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-    const BUFFER_BLOCK_BYTES: u16 = 16_384;
-    const BUFFER_BLOCK_COUNT: usize = 10_000;
     const GENESIS_BALANCE: u64 = 1_000_000;
     const DUPLICATE_BALANCE: u64 = 500_000;
     const TRANSFER_ONE: u64 = 10;
@@ -475,10 +471,6 @@ mod tests {
         format!("{prefix}-{id}")
     }
 
-    fn test_buffer_pool() -> PoolRef {
-        PoolRef::new(NZU16!(BUFFER_BLOCK_BYTES), NZUsize!(BUFFER_BLOCK_COUNT))
-    }
-
     fn transfer_tx(from_key: &SigningKey, to: Address, value: u64, nonce: u64) -> Tx {
         Evm::sign_eip1559_transfer(
             from_key,
@@ -507,14 +499,9 @@ mod tests {
         partition_prefix: &str,
         allocations: Vec<(Address, U256)>,
     ) -> LedgerSetup {
-        let ledger = LedgerView::init(
-            context,
-            test_buffer_pool(),
-            next_partition(partition_prefix),
-            allocations,
-        )
-        .await
-        .expect("init ledger");
+        let ledger = LedgerView::init(context, next_partition(partition_prefix), allocations)
+            .await
+            .expect("init ledger");
         let service = LedgerService::new(ledger.clone());
         let genesis = service.genesis_block();
         let genesis_digest = genesis.commitment();

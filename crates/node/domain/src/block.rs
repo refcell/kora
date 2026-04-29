@@ -67,7 +67,7 @@ impl commonware_consensus::Heightable for Block {
 }
 
 impl commonware_consensus::Block for Block {
-    fn parent(&self) -> Self::Commitment {
+    fn parent(&self) -> Self::Digest {
         digest_for_block_id(&self.parent)
     }
 }

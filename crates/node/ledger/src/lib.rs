@@ -234,6 +234,13 @@ impl LedgerView {
         parent: ConsensusDigest,
         changes: QmdbChangeSet,
     ) -> LedgerResult<StateRoot> {
+        if changes.is_empty() {
+            let inner = self.inner.lock().await;
+            let snapshot =
+                inner.snapshots.get(&parent).ok_or(ConsensusError::SnapshotNotFound(parent))?;
+            return Ok(snapshot.state_root);
+        }
+
         let (changes, state) = {
             let inner = self.inner.lock().await;
             let changes = inner.snapshots.merged_changes(parent, changes)?;
@@ -588,6 +595,51 @@ mod tests {
             let result = qmdb.state().balance(&to).await.expect("balance");
             assert_eq!(result, U256::from(TRANSFER_ONE + TRANSFER_TWO));
             assert_eq!(state_root, block2.block.state_root);
+        });
+    }
+
+    #[test]
+    fn empty_child_inherits_parent_state_root_after_persist() {
+        // Tokio runtime required for WrapDatabaseAsync in the QMDB adapter.
+        let executor = tokio::Runner::default();
+        executor.start(|context| async move {
+            // Arrange: create and persist a non-empty parent, matching the timing that can differ
+            // across validators during consensus.
+            let from_key = key_from_byte(FROM_BYTE_A);
+            let to_key = key_from_byte(TO_BYTE_A);
+            let from = Evm::address_from_key(&from_key);
+            let to = Evm::address_from_key(&to_key);
+            let setup = setup_ledger(
+                context,
+                "revm-ledger-empty-child",
+                vec![(from, U256::from(GENESIS_BALANCE)), (to, U256::ZERO)],
+            )
+            .await;
+            let parent_snapshot = setup
+                .service
+                .parent_snapshot(setup.genesis_digest)
+                .await
+                .expect("genesis snapshot");
+            let parent = build_block_snapshot(
+                &setup.service,
+                &setup.genesis,
+                parent_snapshot,
+                HEIGHT_ONE,
+                vec![transfer_tx(&from_key, to, TRANSFER_ONE, 0)],
+            )
+            .await;
+            assert!(setup.ledger.persist_snapshot(parent.digest).await.expect("persist"));
+
+            // Act: an empty child has no state transition and must not recompute a new QMDB root
+            // from local persistence metadata.
+            let empty_root = setup
+                .service
+                .compute_root(parent.digest, Default::default())
+                .await
+                .expect("compute empty child root");
+
+            // Assert
+            assert_eq!(empty_root, parent.block.state_root);
         });
     }
 

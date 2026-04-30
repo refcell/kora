@@ -19,8 +19,9 @@ use kora_domain::{
     Block, BlockId, ConsensusDigest, LedgerEvent, LedgerEvents, StateRoot, Tx, TxId,
 };
 use kora_overlay::OverlayState;
+use kora_qmdb::StateRoot as QmdbStateRoot;
 use kora_qmdb_ledger::{Error as QmdbError, QmdbChangeSet, QmdbConfig, QmdbLedger, QmdbState};
-use kora_traits::{StateDbError, StateDbRead, StateDbWrite};
+use kora_traits::{StateDbError, StateDbRead};
 use thiserror::Error;
 
 /// Snapshot type used by the ledger.
@@ -228,26 +229,17 @@ impl LedgerView {
         self.compute_root_from_store(parent, changes).await
     }
 
-    /// Compute a root using the persisted QMDB store plus any pending changes.
+    /// Compute the deterministic consensus root for a state transition.
     pub async fn compute_root_from_store(
         &self,
         parent: ConsensusDigest,
         changes: QmdbChangeSet,
     ) -> LedgerResult<StateRoot> {
-        if changes.is_empty() {
+        let parent_root = {
             let inner = self.inner.lock().await;
-            let snapshot =
-                inner.snapshots.get(&parent).ok_or(ConsensusError::SnapshotNotFound(parent))?;
-            return Ok(snapshot.state_root);
-        }
-
-        let (changes, state) = {
-            let inner = self.inner.lock().await;
-            let changes = inner.snapshots.merged_changes(parent, changes)?;
-            (changes, inner.qmdb.state())
+            inner.snapshots.get(&parent).ok_or(ConsensusError::SnapshotNotFound(parent))?.state_root
         };
-        let root = state.compute_root(&changes).await?;
-        Ok(StateRoot(root))
+        Ok(StateRoot(QmdbStateRoot::transition(parent_root.0, &changes)))
     }
 
     /// Persist `digest` and any missing ancestors to QMDB.

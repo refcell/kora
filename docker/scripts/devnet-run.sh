@@ -159,6 +159,19 @@ clear_dkg_outputs() {
     done
 }
 
+clear_runtime_state() {
+    for volume in \
+        kora-devnet_data_node0 \
+        kora-devnet_data_node1 \
+        kora-devnet_data_node2 \
+        kora-devnet_data_node3 \
+        kora-devnet_data_secondary0; do
+        docker volume inspect "$volume" >/dev/null 2>&1 || continue
+        docker run --rm -v "${volume}:/data" alpine \
+            rm -rf /data/runtime >/dev/null 2>&1 || true
+    done
+}
+
 cd "$(dirname "$0")/.."
 
 print_header
@@ -292,6 +305,10 @@ echo ""
 
 # Phase 2: Validators and secondary peers
 print_phase "2/3" "Starting validators and secondary peers"
+
+docker compose -f compose/devnet.yaml stop \
+    validator-node0 validator-node1 validator-node2 validator-node3 secondary-node0 >/dev/null 2>&1 || true
+clear_runtime_state
 
 run_with_spinner "Launching validator and secondary containers..." docker compose -f compose/devnet.yaml ${COMPOSE_PROFILES:+--profile observability} up -d \
     validator-node0 validator-node1 validator-node2 validator-node3 secondary-node0 \

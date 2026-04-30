@@ -3421,6 +3421,7 @@ dependencies = [
  "kora-domain",
  "kora-executor",
  "kora-overlay",
+ "kora-qmdb",
  "kora-qmdb-ledger",
  "kora-traits",
  "thiserror 2.0.18",

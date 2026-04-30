@@ -175,7 +175,9 @@ impl ProductionRunner {
         use commonware_runtime::Runner;
         use kora_transport::NetworkConfigExt;
 
-        let executor = tokio::Runner::default();
+        let executor = tokio::Runner::new(
+            tokio::Config::default().with_storage_directory(config.data_dir.join("runtime")),
+        );
         executor.start(|context| async move {
             let validator_key = config
                 .validator_key()

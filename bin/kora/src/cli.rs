@@ -198,7 +198,10 @@ impl Cli {
             "Starting secondary peer"
         );
 
-        let executor = commonware_runtime::tokio::Runner::default();
+        let executor = commonware_runtime::tokio::Runner::new(
+            commonware_runtime::tokio::Config::default()
+                .with_storage_directory(config.data_dir.join("runtime")),
+        );
         executor.start(|context| async move {
             let mut transport = config
                 .network

@@ -47,10 +47,18 @@ pub trait StateProvider: Send + Sync {
     ) -> Result<U256, RpcError>;
 
     /// Get a block by number.
-    async fn block_by_number(&self, block: BlockNumberOrTag) -> Result<Option<RpcBlock>, RpcError>;
+    async fn block_by_number(
+        &self,
+        block: BlockNumberOrTag,
+        full_transactions: bool,
+    ) -> Result<Option<RpcBlock>, RpcError>;
 
     /// Get a block by hash.
-    async fn block_by_hash(&self, hash: B256) -> Result<Option<RpcBlock>, RpcError>;
+    async fn block_by_hash(
+        &self,
+        hash: B256,
+        full_transactions: bool,
+    ) -> Result<Option<RpcBlock>, RpcError>;
 
     /// Get a transaction by hash.
     async fn transaction_by_hash(&self, hash: B256) -> Result<Option<RpcTransaction>, RpcError>;
@@ -129,11 +137,16 @@ impl StateProvider for NoopStateProvider {
     async fn block_by_number(
         &self,
         _block: BlockNumberOrTag,
+        _full_transactions: bool,
     ) -> Result<Option<RpcBlock>, RpcError> {
         Ok(None)
     }
 
-    async fn block_by_hash(&self, _hash: B256) -> Result<Option<RpcBlock>, RpcError> {
+    async fn block_by_hash(
+        &self,
+        _hash: B256,
+        _full_transactions: bool,
+    ) -> Result<Option<RpcBlock>, RpcError> {
         Ok(None)
     }
 

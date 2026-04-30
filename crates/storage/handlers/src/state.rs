@@ -92,10 +92,11 @@ where
         + 'static,
 {
     async fn commit(&self, changes: ChangeSet) -> Result<B256, StateDbError> {
+        let _storage_access = self.storage_access().await;
         let mut store = self.write().await;
         store.commit_changes(changes).await.map_err(|e| StateDbError::Storage(e.to_string()))?;
+        drop(store);
 
-        // If we have a root provider, commit and get the state root
         if let Some(provider) = self.root_provider() {
             let mut provider = provider.write().await;
             provider
@@ -111,6 +112,7 @@ where
     async fn compute_root(&self, changes: &ChangeSet) -> Result<B256, StateDbError> {
         // If we have a root provider, use it to compute the root
         if let Some(provider) = self.root_provider() {
+            let _storage_access = self.storage_access().await;
             let mut provider = provider.write().await;
             provider
                 .compute_root(changes)
@@ -149,6 +151,7 @@ where
     async fn state_root(&self) -> Result<B256, StateDbError> {
         // If we have a root provider, use it to get the state root
         if let Some(provider) = self.root_provider() {
+            let _storage_access = self.storage_access().await;
             let provider = provider.read().await;
             provider.state_root().await.map_err(|e| StateDbError::RootComputation(e.to_string()))
         } else {

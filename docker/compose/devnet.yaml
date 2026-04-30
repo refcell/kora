@@ -9,6 +9,7 @@ volumes:
   data_node1:
   data_node2:
   data_node3:
+  data_secondary0:
   shared_config:
   prometheus_data:
   grafana_data:
@@ -46,11 +47,12 @@ services:
         echo "[init] Running keygen setup..." && \
         /usr/local/bin/keygen setup \
           --validators=4 \
+          --secondary-peers=1 \
           --threshold=3 \
           --chain-id=${CHAIN_ID:-1337} \
           --output-dir=/shared && \
         echo "[init] Setting permissions..." && \
-        chown -R 1000:1000 /shared/node0 /shared/node1 /shared/node2 /shared/node3 && \
+        chown -R 1000:1000 /shared/node0 /shared/node1 /shared/node2 /shared/node3 /shared/secondary0 && \
         echo "[init] Setup complete (run DKG ceremony next)"
     volumes:
       - shared_config:/shared
@@ -58,6 +60,7 @@ services:
       - data_node1:/shared/node1
       - data_node2:/shared/node2
       - data_node3:/shared/node3
+      - data_secondary0:/shared/secondary0
 
   # Setup + trusted dealer DKG (for fast local dev)
   init-config:
@@ -69,6 +72,7 @@ services:
         echo "[init] Running keygen setup..." && \
         /usr/local/bin/keygen setup \
           --validators=4 \
+          --secondary-peers=1 \
           --threshold=3 \
           --chain-id=${CHAIN_ID:-1337} \
           --output-dir=/shared && \
@@ -78,7 +82,7 @@ services:
           --threshold=3 \
           --output-dir=/shared && \
         echo "[init] Setting permissions..." && \
-        chown -R 1000:1000 /shared/node0 /shared/node1 /shared/node2 /shared/node3 && \
+        chown -R 1000:1000 /shared/node0 /shared/node1 /shared/node2 /shared/node3 /shared/secondary0 && \
         echo "[init] Init complete"
     volumes:
       - shared_config:/shared
@@ -86,6 +90,7 @@ services:
       - data_node1:/shared/node1
       - data_node2:/shared/node2
       - data_node3:/shared/node3
+      - data_secondary0:/shared/secondary0
 
   # Interactive DKG nodes - run ceremony then exit
   dkg-node0:
@@ -177,9 +182,6 @@ services:
   validator-node0:
     <<: *validator-common
     hostname: node0
-    depends_on:
-      init-config:
-        condition: service_completed_successfully
     entrypoint: ["/scripts/entrypoint.sh", "validator"]
     volumes:
       - shared_config:/shared:ro
@@ -199,8 +201,6 @@ services:
     <<: *validator-common
     hostname: node1
     depends_on:
-      init-config:
-        condition: service_completed_successfully
       validator-node0:
         condition: service_healthy
     entrypoint: ["/scripts/entrypoint.sh", "validator"]
@@ -216,15 +216,13 @@ services:
       - HEALTHCHECK_MODE=ready
     ports:
       - "30401:30303"
-      - "8546:8546"
+      - "8546:8545"
       - "9001:9002"
 
   validator-node2:
     <<: *validator-common
     hostname: node2
     depends_on:
-      init-config:
-        condition: service_completed_successfully
       validator-node0:
         condition: service_healthy
     entrypoint: ["/scripts/entrypoint.sh", "validator"]
@@ -240,15 +238,13 @@ services:
       - HEALTHCHECK_MODE=ready
     ports:
       - "30402:30303"
-      - "8547:8547"
+      - "8547:8545"
       - "9002:9002"
 
   validator-node3:
     <<: *validator-common
     hostname: node3
     depends_on:
-      init-config:
-        condition: service_completed_successfully
       validator-node0:
         condition: service_healthy
     entrypoint: ["/scripts/entrypoint.sh", "validator"]
@@ -264,8 +260,27 @@ services:
       - HEALTHCHECK_MODE=ready
     ports:
       - "30403:30303"
-      - "8548:8548"
+      - "8548:8545"
       - "9003:9002"
+
+  secondary-node0:
+    <<: *validator-common
+    hostname: secondary0
+    depends_on:
+      validator-node0:
+        condition: service_healthy
+    entrypoint: ["/scripts/entrypoint.sh", "secondary"]
+    volumes:
+      - shared_config:/shared:ro
+      - data_secondary0:/data
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+      - CHAIN_ID=${CHAIN_ID:-1337}
+      - IS_BOOTSTRAP=false
+      - BOOTSTRAP_PEERS=node0:30303
+      - HEALTHCHECK_MODE=ready
+    ports:
+      - "30500:30303"
 
   prometheus:
     image: prom/prometheus:latest

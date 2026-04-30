@@ -5,7 +5,8 @@ use std::{collections::BTreeSet, time::Instant};
 use alloy_consensus::Header;
 use alloy_primitives::{Address, B256, Bytes};
 use commonware_consensus::{
-    Application, Block as _, VerifyingApplication, marshal::ingress::mailbox::AncestorStream,
+    Application, Block as _, VerifyingApplication,
+    marshal::ancestry::{AncestorStream, BlockProvider},
     simplex::types::Context,
 };
 use commonware_cryptography::{Committable as _, certificate::Scheme as CertScheme};
@@ -90,7 +91,30 @@ where
 
         let (_, mempool, snapshots) = self.ledger.proposal_components().await;
         let excluded = self.collect_pending_tx_ids(&snapshots, parent_digest);
+        let mempool_len = mempool.len();
+        let excluded_len = excluded.len();
         let txs = mempool.build(self.max_txs, &excluded);
+
+        // Diagnostic: when the producer builds an empty block while there are
+        // unincluded txs in the mempool, something is wrong (e.g. RPC tx_submit
+        // not wired, the excluded set over-collecting, or max_txs misconfigured).
+        // Log enough state to tell which.
+        if txs.is_empty() && mempool_len > excluded_len {
+            warn!(
+                mempool_len,
+                excluded_len,
+                max_txs = self.max_txs,
+                "build_block: mempool has unincluded txs but produced empty block"
+            );
+        } else {
+            trace!(
+                mempool_len,
+                excluded_len,
+                drained = txs.len(),
+                max_txs = self.max_txs,
+                "build_block: mempool drain"
+            );
+        }
 
         let prevrandao = self.get_prevrandao(parent_digest).await;
         let height = parent.height + 1;
@@ -259,11 +283,14 @@ where
         async move { self.ledger.genesis_block() }
     }
 
-    fn propose(
+    fn propose<A>(
         &mut self,
         _context: (Env, Self::Context),
-        mut ancestry: AncestorStream<Self::SigningScheme, Self::Block>,
-    ) -> impl std::future::Future<Output = Option<Self::Block>> + Send {
+        mut ancestry: AncestorStream<A, Self::Block>,
+    ) -> impl std::future::Future<Output = Option<Self::Block>> + Send
+    where
+        A: BlockProvider<Block = Self::Block>,
+    {
         let node_state = self.node_state.clone();
         async move {
             let start = Instant::now();
@@ -298,11 +325,14 @@ where
     S: CertScheme + Send + Sync + 'static,
     E: BlockExecutor<OverlayState<QmdbState>, Tx = Bytes> + Clone + Send + Sync + 'static,
 {
-    fn verify(
+    fn verify<A>(
         &mut self,
         _context: (Env, Self::Context),
-        mut ancestry: AncestorStream<Self::SigningScheme, Self::Block>,
-    ) -> impl std::future::Future<Output = bool> + Send {
+        mut ancestry: AncestorStream<A, Self::Block>,
+    ) -> impl std::future::Future<Output = bool> + Send
+    where
+        A: BlockProvider<Block = Self::Block>,
+    {
         async move {
             let start = Instant::now();
 

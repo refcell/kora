@@ -51,7 +51,7 @@ impl Committable for Block {
 }
 
 impl BlockTrait for Block {
-    fn parent(&self) -> Self::Commitment {
+    fn parent(&self) -> Self::Digest {
         self.parent
     }
 }

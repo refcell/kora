@@ -17,10 +17,11 @@ kora-qmdb = { path = "../../storage/qmdb" }
 kora-traits = { path = "../../storage/traits" }
 revm.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["rt"] }
 
 [dev-dependencies]
 rstest.workspace = true
-tokio = { workspace = true, features = ["rt", "macros"] }
+tokio = { workspace = true, features = ["macros"] }
 
 [lints]
 workspace = true

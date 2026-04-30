@@ -19,15 +19,15 @@ use std::{
 
 use commonware_consensus::{
     Heightable, Reporter,
-    marshal::Update,
+    marshal::{Update, core::Mailbox, standard::Standard},
     simplex::{
-        scheme::bls12381_threshold,
+        scheme::bls12381_threshold::standard as bls12381_threshold,
         types::{Activity, Finalization, Finalize, Notarization, Notarize, Proposal},
     },
     types::{Epoch, Height, Round, View},
 };
 use commonware_cryptography::{
-    Committable, Digestible, Hasher as _,
+    Digestible, Hasher as _,
     bls12381::primitives::variant::MinPk,
     certificate::{ConstantProvider, Scheme as CertificateScheme, mocks::Fixture},
     ed25519::PublicKey,
@@ -39,8 +39,8 @@ use commonware_p2p::{
     simulated::{self, Link, Network, Oracle},
 };
 use commonware_parallel::Sequential;
-use commonware_runtime::{Clock, Metrics, Quota, Runner, buffer::PoolRef, deterministic};
-use commonware_utils::{Acknowledgement, NZU16, NZUsize};
+use commonware_runtime::{Clock, Metrics, Quota, Runner, deterministic};
+use commonware_utils::{Acknowledgement, NZU16, NZUsize, ordered::Set};
 use kora_marshal::{ActorInitializer, ArchiveInitializer, BroadcastInitializer, PeerInitializer};
 
 use crate::common::Block;
@@ -67,7 +67,7 @@ const TEST_QUOTA: Quota = Quota::per_second(NonZeroU32::MAX);
 #[derive(Clone, Default)]
 struct MockApplication {
     blocks: Arc<Mutex<BTreeMap<Height, B>>>,
-    tip: Arc<Mutex<Option<(Height, <B as Committable>::Commitment)>>>,
+    tip: Arc<Mutex<Option<(Height, <B as Digestible>::Digest)>>>,
 }
 
 impl MockApplication {
@@ -86,7 +86,7 @@ impl Reporter for MockApplication {
                 self.blocks.lock().unwrap().insert(height, block);
                 ack.acknowledge();
             }
-            Update::Tip(height, commitment) => {
+            Update::Tip(_, height, commitment) => {
                 *self.tip.lock().unwrap() = Some((height, commitment));
             }
         }
@@ -120,9 +120,7 @@ async fn setup_validator(
     oracle: &mut Oracle<K, deterministic::Context>,
     validator: K,
     provider: ConstantProvider<S, Epoch>,
-) -> (MockApplication, commonware_consensus::marshal::Mailbox<S, B>, Height) {
-    let buffer_pool = PoolRef::new(NZU16!(1024), NZUsize!(10));
-
+) -> (MockApplication, Mailbox<S, Standard<B>>, Height) {
     // 1. Use PeerInitializer::init() for the resolver
     let control = oracle.control(validator.clone());
     let backfill = control.register(1, TEST_QUOTA).await.unwrap();
@@ -136,8 +134,12 @@ async fn setup_validator(
     );
 
     // 2. Use BroadcastInitializer::init() for the broadcast engine
-    let (broadcast_engine, buffer) =
-        BroadcastInitializer::init::<_, _, B>(context.clone(), validator.clone(), ());
+    let (broadcast_engine, buffer) = BroadcastInitializer::init::<_, _, B, _>(
+        context.clone(),
+        validator.clone(),
+        oracle.manager(),
+        (),
+    );
     let network = control.register(2, TEST_QUOTA).await.unwrap();
     broadcast_engine.start(network);
 
@@ -161,7 +163,11 @@ async fn setup_validator(
         finalizations_by_height,
         finalized_blocks,
         provider,
-        buffer_pool,
+        commonware_runtime::buffer::paged::CacheRef::from_pooler(
+            &context,
+            NZU16!(1024),
+            NZUsize!(10),
+        ),
         (),
     )
     .await;
@@ -200,7 +206,7 @@ fn test_start_marshal_and_finalize_block() {
             simulated::Config {
                 max_size: 1024 * 1024,
                 disconnect_on_block: true,
-                tracked_peer_sets: None,
+                tracked_peer_sets: NZUsize!(1),
             },
         );
         network.start();
@@ -279,7 +285,7 @@ fn test_start_marshal_multiple_validators() {
             simulated::Config {
                 max_size: 1024 * 1024,
                 disconnect_on_block: true,
-                tracked_peer_sets: Some(3),
+                tracked_peer_sets: NZUsize!(3),
             },
         );
         network.start();
@@ -290,7 +296,7 @@ fn test_start_marshal_multiple_validators() {
 
         // Register peer set
         let mut manager = oracle.manager();
-        manager.update(0, participants.clone().try_into().unwrap()).await;
+        manager.track(0, Set::from_iter_dedup(participants.clone())).await;
 
         // Setup multiple validators
         let mut applications = Vec::new();

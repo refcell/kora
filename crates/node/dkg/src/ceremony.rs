@@ -172,14 +172,14 @@ impl DkgCeremony {
         Ok(output)
     }
 
-    /// Phase 2: Collect dealer messages from quorum and send acks.
+    /// Phase 2: Collect dealer messages from all participants and send acks.
     async fn run_phase2(
         &self,
         network: &DkgNetwork,
         participant: &mut DkgParticipant,
     ) -> Result<(), DkgError> {
         info!(
-            required = participant.required_quorum(),
+            required = participant.required_dealer_logs(),
             total = participant.total_participants(),
             "Phase 2: Collecting dealer messages and sending acks"
         );
@@ -194,7 +194,7 @@ impl DkgCeremony {
 
             let received = participant.received_dealer_count();
             let acks_sent = participant.acks_sent_count();
-            let required = participant.required_quorum();
+            let required = participant.required_dealer_logs();
             let total = participant.total_participants();
 
             // Log progress periodically
@@ -213,13 +213,13 @@ impl DkgCeremony {
                 last_progress_log = Instant::now();
             }
 
-            // Phase 2 completes when we have quorum dealer messages AND have sent acks
+            // Phase 2 completes when every participant's dealer messages are acknowledged.
             if received >= required && acks_sent >= required {
                 info!(
                     received,
                     acks_sent,
                     required,
-                    "Phase 2 complete: received quorum dealer messages and sent acks"
+                    "Phase 2 complete: received all dealer messages and sent acks"
                 );
                 return Ok(());
             }
@@ -301,7 +301,7 @@ impl DkgCeremony {
         participant: &mut DkgParticipant,
     ) -> Result<(), DkgError> {
         info!(
-            required = participant.required_quorum(),
+            required = participant.required_dealer_logs(),
             "Phase 4: Collecting dealer logs for finalization"
         );
 
@@ -315,7 +315,7 @@ impl DkgCeremony {
             self.send_outgoing(network, participant)?;
 
             let logs = participant.dealer_log_count();
-            let required = participant.required_quorum();
+            let required = participant.required_dealer_logs();
 
             // Log progress periodically
             if last_progress_log.elapsed() >= Duration::from_secs(PROGRESS_LOG_INTERVAL_SECS) {
@@ -353,7 +353,7 @@ impl DkgCeremony {
         Err(DkgError::CeremonyFailed(format!(
             "Phase 4 timeout: only collected {}/{} dealer logs",
             participant.dealer_log_count(),
-            participant.required_quorum()
+            participant.required_dealer_logs()
         )))
     }
 
@@ -368,16 +368,9 @@ impl DkgCeremony {
 
         let start = Instant::now();
 
-        // Give leader time to start first
-        if !self.is_leader() {
-            tokio::time::sleep(Duration::from_secs(2)).await;
-        }
-
-        // For non-bootstrap nodes, wait for network initialization
-        if !self.config.bootstrap_peers.is_empty() {
-            // Simple delay to allow network setup rather than legacy ping
-            tokio::time::sleep(Duration::from_secs(3)).await;
-        }
+        // Give all DKG containers time to join the p2p overlay before the phase-1
+        // broadcasts, which are not replayed if sent before peers are reachable.
+        tokio::time::sleep(Duration::from_secs(10)).await;
 
         info!(elapsed = ?start.elapsed(), "Peer initialization complete");
         Ok(())

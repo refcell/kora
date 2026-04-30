@@ -15,4 +15,4 @@ mod broadcast;
 pub use broadcast::BroadcastInitializer;
 
 mod peers;
-pub use peers::PeerInitializer;
+pub use peers::{PeerInitializer, ResolverChannels, ResolverMailbox, ResolverReceiver};

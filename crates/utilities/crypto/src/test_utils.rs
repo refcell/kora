@@ -1,5 +1,5 @@
 use anyhow::Context as _;
-use commonware_consensus::simplex::scheme::bls12381_threshold;
+use commonware_consensus::simplex::scheme::bls12381_threshold::vrf as bls12381_threshold;
 use commonware_cryptography::{
     Signer as _,
     bls12381::{

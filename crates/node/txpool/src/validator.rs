@@ -94,6 +94,10 @@ impl<S: StateDbRead> TransactionValidator<S> {
         if nonce < state_nonce {
             return Err(TxPoolError::NonceTooLow { got: nonce, expected: state_nonce });
         }
+        let max_accepted_nonce = state_nonce.saturating_add(self.config.max_txs_per_sender as u64);
+        if nonce > max_accepted_nonce {
+            return Err(TxPoolError::NonceGap { got: nonce, expected: state_nonce });
+        }
 
         let max_cost = max_tx_cost(&envelope);
         let balance = self
@@ -167,7 +171,7 @@ fn recover_sender_and_hash(envelope: &TxEnvelope) -> Result<(Address, B256), TxP
     Ok((sender, hash))
 }
 
-fn effective_gas_price(envelope: &TxEnvelope) -> u128 {
+const fn effective_gas_price(envelope: &TxEnvelope) -> u128 {
     match envelope {
         TxEnvelope::Legacy(tx) => tx.tx().gas_price,
         TxEnvelope::Eip2930(tx) => tx.tx().gas_price,
@@ -509,6 +513,83 @@ mod tests {
 
         let result = validator.validate(raw_tx).await;
         assert!(matches!(result, Err(TxPoolError::NonceTooLow { got: 0, expected: 5 })));
+    }
+
+    #[tokio::test]
+    async fn reject_far_future_nonce() {
+        let chain_id = 1u64;
+        let (sender, _, raw_tx) =
+            sign_eip1559_tx(chain_id, 100, 21000, 1_000_000_000, U256::ZERO, Some(Address::ZERO));
+
+        let state =
+            MockState::new().with_account(sender, 0, U256::from(1_000_000_000_000_000_000u64));
+        let config = PoolConfig::default().with_max_txs_per_sender(16);
+        let validator = TransactionValidator::new(chain_id, state, config);
+
+        let result = validator.validate(raw_tx).await;
+        assert!(matches!(result, Err(TxPoolError::NonceGap { got: 100, expected: 0 })));
+    }
+
+    /// Sign `count` legacy txs with the same key, returning (sender, raw_txs[]).
+    /// Each tx has a sequential nonce starting at `start_nonce`.
+    fn sign_legacy_burst(chain_id: u64, start_nonce: u64, count: u64) -> (Address, Vec<Tx>) {
+        let signing_key = SigningKey::random(&mut OsRng);
+        let verifying_key = signing_key.verifying_key();
+        let pubkey = verifying_key.to_encoded_point(false);
+        let pubkey_bytes = pubkey.as_bytes();
+        let pubkey_hash = sha3::Keccak256::digest(&pubkey_bytes[1..]);
+        let sender = Address::from_slice(&pubkey_hash[12..]);
+
+        let mut raws = Vec::with_capacity(count as usize);
+        for i in 0..count {
+            let tx = TxLegacy {
+                chain_id: Some(chain_id),
+                nonce: start_nonce + i,
+                gas_limit: 1_000_000,
+                gas_price: 1_000_000_000,
+                to: TxKind::Create,
+                value: U256::ZERO,
+                input: Bytes::new(),
+            };
+            let sig_hash = tx.signature_hash();
+            let (sig, recovery_id) =
+                signing_key.sign_prehash_recoverable(sig_hash.as_slice()).unwrap();
+            let r = U256::from_be_slice(&sig.r().to_bytes());
+            let s = U256::from_be_slice(&sig.s().to_bytes());
+            let v = recovery_id.is_y_odd();
+            let signature = Signature::new(r, s, v);
+            let signed = tx.into_signed(signature);
+            let envelope = TxEnvelope::from(signed);
+            let mut raw_bytes = Vec::new();
+            envelope.encode_2718(&mut raw_bytes);
+            raws.push(Tx::new(raw_bytes.into()));
+        }
+        (sender, raws)
+    }
+
+    /// Regression: a fresh deployer submitting 39 sequential txs (the typical
+    /// contract-deploy burst — e.g. the Mirage agents+exchange stack) must not
+    /// be rejected by the per-sender cap before any of them mine.
+    ///
+    /// Pre-fix: `max_txs_per_sender = 16` rejected tx 17+ as `NonceGap` even
+    /// though the txs are perfectly contiguous from `state_nonce = 0`. Bursty
+    /// devnet deploys (Foundry Forge + Cannon + raw-RPC scripts) hit this.
+    #[tokio::test]
+    async fn accept_burst_of_39_sequential_nonces_from_single_sender() {
+        let chain_id = 1u64;
+        let (sender, raws) = sign_legacy_burst(chain_id, 0, 39);
+
+        let state =
+            MockState::new().with_account(sender, 0, U256::from(10_000_000_000_000_000_000u128));
+        let config = PoolConfig::default();
+        let validator = TransactionValidator::new(chain_id, state, config);
+
+        for (i, raw) in raws.into_iter().enumerate() {
+            let res = validator.validate(raw).await;
+            assert!(res.is_ok(), "tx {} (nonce={}) was rejected: {:?}", i, i, res.err());
+            let v = res.unwrap();
+            assert_eq!(v.nonce, i as u64);
+        }
     }
 
     #[tokio::test]

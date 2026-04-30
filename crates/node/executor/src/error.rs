@@ -1,6 +1,6 @@
 //! Execution error types.
 
-use alloy_primitives::B256;
+use alloy_primitives::{B256, Bytes};
 use revm::database_interface::DBErrorMarker;
 use thiserror::Error;
 
@@ -18,6 +18,13 @@ pub enum ExecutionError {
     /// Transaction execution failed.
     #[error("transaction execution failed: {0}")]
     TxExecution(String),
+
+    /// Call reverted with output data.
+    ///
+    /// Carries the revert payload so callers can decode `Error(string)`
+    /// or custom-error data per Solidity ABI conventions.
+    #[error("execution reverted")]
+    Revert(Bytes),
 
     /// Invalid transaction.
     #[error("invalid transaction: {0}")]

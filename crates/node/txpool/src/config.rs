@@ -22,7 +22,7 @@ impl Default for PoolConfig {
         Self {
             max_pending_txs: 4096,
             max_queued_txs: 1024,
-            max_txs_per_sender: 16,
+            max_txs_per_sender: 256,
             max_tx_size: 128 * 1024, // 128 KB
             min_gas_price: 0,
             replacement_bump_percent: 10,
@@ -36,7 +36,7 @@ impl PoolConfig {
         Self {
             max_pending_txs: 4096,
             max_queued_txs: 1024,
-            max_txs_per_sender: 16,
+            max_txs_per_sender: 256,
             max_tx_size: 128 * 1024,
             min_gas_price: 0,
             replacement_bump_percent: 10,
@@ -95,7 +95,7 @@ mod tests {
         let config = PoolConfig::default();
         assert_eq!(config.max_pending_txs, 4096);
         assert_eq!(config.max_queued_txs, 1024);
-        assert_eq!(config.max_txs_per_sender, 16);
+        assert_eq!(config.max_txs_per_sender, 256);
         assert_eq!(config.max_tx_size, 128 * 1024);
         assert_eq!(config.min_gas_price, 0);
         assert_eq!(config.replacement_bump_percent, 10);

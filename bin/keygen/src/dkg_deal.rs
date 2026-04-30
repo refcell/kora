@@ -76,6 +76,15 @@ pub(crate) fn run(args: DkgDealArgs) -> Result<()> {
         .try_collect()
         .map_err(|_| eyre::eyre!("Duplicate participants"))?;
 
+    let participant_keys: Vec<String> = participants_set
+        .iter()
+        .map(|pk| {
+            let mut bytes = Vec::new();
+            pk.write(&mut bytes);
+            hex::encode(bytes)
+        })
+        .collect();
+
     let mut rng = rand::rngs::OsRng;
 
     tracing::info!("Generating BLS threshold key shares");
@@ -98,15 +107,6 @@ pub(crate) fn run(args: DkgDealArgs) -> Result<()> {
         "Generated group public key and polynomial"
     );
 
-    let participant_keys: Vec<String> = participants
-        .iter()
-        .map(|pk| {
-            let mut bytes = Vec::new();
-            pk.write(&mut bytes);
-            hex::encode(bytes)
-        })
-        .collect();
-
     for (i, pk) in participants.iter().enumerate() {
         let share =
             shares.get_value(pk).ok_or_else(|| eyre::eyre!("Missing share for node{}", i))?;
@@ -126,7 +126,7 @@ pub(crate) fn run(args: DkgDealArgs) -> Result<()> {
         let output_path = node_dir.join("output.json");
         fs::write(&output_path, serde_json::to_string_pretty(&output_json)?)?;
 
-        let share_json = ShareJson { index: i as u32, secret: hex::encode(&share_bytes) };
+        let share_json = ShareJson { index: share.index.get(), secret: hex::encode(&share_bytes) };
         let share_path = node_dir.join("share.key");
         fs::write(&share_path, serde_json::to_string_pretty(&share_json)?)?;
 

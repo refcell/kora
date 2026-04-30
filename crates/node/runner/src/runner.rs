@@ -5,17 +5,20 @@ use alloy_primitives::{Address, B256};
 use anyhow::Context as _;
 use commonware_consensus::{
     Reporters,
-    application::marshaled::Marshaled,
+    marshal::{
+        core::Mailbox,
+        standard::{Inline, Standard},
+    },
     simplex::{self, elector::Random, types::Finalization},
     types::{Epoch, FixedEpocher, ViewDelta},
 };
 use commonware_cryptography::{bls12381::primitives::variant::MinSig, ed25519};
-use commonware_p2p::Manager;
+use commonware_p2p::{Manager, TrackedPeers};
 use commonware_parallel::Sequential;
-use commonware_runtime::{Metrics as _, Spawner, buffer::PoolRef, tokio};
-use commonware_utils::{NZU64, NZUsize, acknowledgement::Exact};
+use commonware_runtime::{Metrics as _, Spawner, buffer::paged::CacheRef, tokio};
+use commonware_utils::{NZU64, NZUsize, acknowledgement::Exact, ordered::Set};
 use futures::StreamExt;
-use kora_domain::{Block, BlockCfg, BootstrapConfig, ConsensusDigest, LedgerEvent, TxCfg};
+use kora_domain::{Block, BlockCfg, BootstrapConfig, ConsensusDigest, LedgerEvent, Tx, TxCfg};
 use kora_executor::{BlockContext, RevmExecutor};
 use kora_ledger::{LedgerService, LedgerView};
 use kora_marshal::{ArchiveInitializer, BroadcastInitializer, PeerInitializer};
@@ -23,22 +26,30 @@ use kora_reporters::{BlockContextProvider, FinalizedReporter, NodeStateReporter,
 use kora_service::{NodeRunContext, NodeRunner};
 use kora_simplex::{DEFAULT_MAILBOX_SIZE as MAILBOX_SIZE, DefaultPool};
 use kora_transport::NetworkTransport;
-use tracing::{debug, info, trace};
+use kora_txpool::{PoolConfig, TransactionValidator};
+use tracing::{debug, info, trace, warn};
 
 use crate::{RevmApplication, RunnerError, scheme::ThresholdScheme};
 
 const BLOCK_CODEC_MAX_TXS: usize = 64;
-const BLOCK_CODEC_MAX_TX_BYTES: usize = 1024;
+// Match `PoolConfig::default().max_tx_size` (= 128 KiB) and the domain-level
+// `BlockCfg::default().tx.max_tx_bytes` (also 128 KiB). The previous 1024-byte
+// cap rejected every real contract deploy: the validator admitted contracts
+// up to 128 KiB into the mempool, but the block codec then refused to encode
+// anything > 1 KiB, so the producer silently skipped them. Trivial value
+// transfers and ~22-byte init contracts mined; any actual Solidity contract
+// (1+ KiB of bytecode) was dropped. See PR fixing this for the full diagnostic.
+const BLOCK_CODEC_MAX_TX_BYTES: usize = 128 * 1024;
 const EPOCH_LENGTH: u64 = u64::MAX;
 const PARTITION_PREFIX: &str = "kora";
 
 type Peer = ed25519::PublicKey;
 type CertArchive = Finalization<ThresholdScheme, ConsensusDigest>;
-type MarshalMailbox = commonware_consensus::marshal::Mailbox<ThresholdScheme, Block>;
+type MarshalMailbox = Mailbox<ThresholdScheme, Standard<Block>>;
 type NodeStateRptr = NodeStateReporter<ThresholdScheme>;
 
-fn default_buffer_pool() -> PoolRef {
-    DefaultPool::init()
+fn default_page_cache(context: &tokio::Context) -> CacheRef {
+    DefaultPool::init(context)
 }
 
 const fn block_codec_cfg() -> BlockCfg {
@@ -120,6 +131,8 @@ pub struct ProductionRunner {
     pub partition_prefix: String,
     /// Optional RPC configuration (state, bind address).
     pub rpc_config: Option<(kora_rpc::NodeState, std::net::SocketAddr)>,
+    /// Secondary peers authorized to follow validator traffic without participating in consensus.
+    pub secondary_peers: Vec<Peer>,
 }
 
 impl ProductionRunner {
@@ -137,6 +150,7 @@ impl ProductionRunner {
             bootstrap,
             partition_prefix: PARTITION_PREFIX.to_string(),
             rpc_config: None,
+            secondary_peers: Vec::new(),
         }
     }
 
@@ -144,6 +158,13 @@ impl ProductionRunner {
     #[must_use]
     pub fn with_rpc(mut self, state: kora_rpc::NodeState, addr: std::net::SocketAddr) -> Self {
         self.rpc_config = Some((state, addr));
+        self
+    }
+
+    /// Configure secondary peers that should be tracked by the P2P oracle.
+    #[must_use]
+    pub fn with_secondary_peers(mut self, peers: Vec<Peer>) -> Self {
+        self.secondary_peers = peers;
         self
     }
 }
@@ -154,16 +175,10 @@ impl ProductionRunner {
         use commonware_runtime::Runner;
         use kora_transport::NetworkConfigExt;
 
-        let rpc_config = self.rpc_config.clone();
-
-        let executor = tokio::Runner::default();
+        let executor = tokio::Runner::new(
+            tokio::Config::default().with_storage_directory(config.data_dir.join("runtime")),
+        );
         executor.start(|context| async move {
-            // Start RPC server if configured
-            if let Some((state, addr)) = rpc_config {
-                let rpc = kora_rpc::RpcServer::new(state, addr);
-                drop(rpc.start());
-            }
-
             let validator_key = config
                 .validator_key()
                 .map_err(|e| anyhow::anyhow!("failed to load validator key: {}", e))?;
@@ -195,23 +210,79 @@ impl NodeRunner for ProductionRunner {
         info!(chain_id = self.chain_id, "Starting production validator");
 
         let validators = self.scheme.participants().clone();
-        transport.oracle.update(0, validators).await;
-        info!(count = self.scheme.participants().len(), "Registered validators with oracle");
+        let secondary = Set::from_iter_dedup(self.secondary_peers.iter().cloned());
+        let secondary_count = secondary.len();
+        transport.oracle.track(0, TrackedPeers::new(validators, secondary)).await;
+        info!(
+            validators = self.scheme.participants().len(),
+            secondary_peers = secondary_count,
+            "Registered primary and secondary peers with oracle"
+        );
 
-        let buffer_pool = default_buffer_pool();
+        let page_cache = default_page_cache(&context);
         let block_cfg = block_codec_cfg();
 
         let state = LedgerView::init(
             context.with_label("state"),
-            buffer_pool.clone(),
             format!("{}-qmdb", self.partition_prefix),
             self.bootstrap.genesis_alloc.clone(),
         )
         .await
         .context("init qmdb")?;
 
+        let block_index =
+            self.rpc_config.as_ref().map(|_| Arc::new(kora_indexer::BlockIndex::new()));
         let ledger = LedgerService::new(state.clone());
         spawn_ledger_observers(ledger.clone(), context.clone());
+
+        if let Some((node_state, addr)) = &self.rpc_config {
+            let qmdb_state = state.qmdb_state().await;
+            let rpc_executor = Arc::new(RevmExecutor::new(self.chain_id));
+            let indexed_provider = kora_rpc::IndexedStateProvider::new(
+                block_index.clone().expect("block index is initialized with RPC"),
+                qmdb_state,
+                rpc_executor,
+            );
+            let tx_ledger = ledger.clone();
+            let tx_state = state.qmdb_state().await;
+            let chain_id = self.chain_id;
+            let tx_submit: kora_rpc::TxSubmitCallback = Arc::new(move |data| {
+                let ledger = tx_ledger.clone();
+                let state = tx_state.clone();
+                Box::pin(async move {
+                    let tx = Tx::new(data);
+                    let tx_id = tx.id();
+                    let validator =
+                        TransactionValidator::new(chain_id, state, PoolConfig::default());
+                    validator.validate(tx.clone()).await.map_err(|err| {
+                        warn!(?tx_id, error = %err, "rpc submit: validator rejected tx");
+                        kora_rpc::RpcError::InvalidTransaction(err.to_string())
+                    })?;
+                    if ledger.submit_tx(tx).await {
+                        debug!(?tx_id, "rpc submit: tx inserted into mempool");
+                        Ok(())
+                    } else {
+                        warn!(
+                            ?tx_id,
+                            "rpc submit: ledger.submit_tx returned false (duplicate or pool error)"
+                        );
+                        Err(kora_rpc::RpcError::InvalidTransaction(
+                            "transaction rejected by mempool".to_string(),
+                        ))
+                    }
+                })
+            });
+            let rpc = kora_rpc::RpcServer::with_state_provider(
+                node_state.clone(),
+                *addr,
+                self.chain_id,
+                indexed_provider,
+            )
+            .with_tx_submit(tx_submit)
+            .with_peer_count(self.scheme.participants().len().saturating_sub(1) as u64);
+            drop(rpc.start());
+            info!(addr = %addr, "RPC server started with live state provider");
+        }
 
         let validator_key = config
             .validator_key()
@@ -220,8 +291,11 @@ impl NodeRunner for ProductionRunner {
 
         let executor = RevmExecutor::new(self.chain_id);
         let context_provider = RevmContextProvider { gas_limit: self.gas_limit };
-        let finalized_reporter =
+        let mut finalized_reporter =
             FinalizedReporter::new(ledger.clone(), context.clone(), executor, context_provider);
+        if let Some(block_index) = block_index {
+            finalized_reporter = finalized_reporter.with_block_index(block_index);
+        }
 
         let scheme_provider = ConstantSchemeProvider::from(self.scheme.clone());
 
@@ -233,9 +307,10 @@ impl NodeRunner for ProductionRunner {
             transport.marshal.backfill,
         );
 
-        let (broadcast_engine, buffer) = BroadcastInitializer::init::<_, Peer, Block>(
+        let (broadcast_engine, buffer) = BroadcastInitializer::init::<_, Peer, Block, _>(
             context.with_label("broadcast"),
             my_pk.clone(),
+            transport.oracle.clone(),
             block_cfg,
         );
         broadcast_engine.start(transport.marshal.blocks);
@@ -264,7 +339,7 @@ impl NodeRunner for ProductionRunner {
                 finalizations_by_height,
                 finalized_blocks,
                 scheme_provider,
-                buffer_pool.clone(),
+                page_cache.clone(),
                 block_cfg,
             )
             .await;
@@ -282,7 +357,7 @@ impl NodeRunner for ProductionRunner {
             app = app.with_node_state(state.clone());
         }
         let marshaled =
-            Marshaled::new(context.with_label("marshaled"), app, marshal_mailbox.clone(), epocher);
+            Inline::new(context.with_label("marshaled"), app, marshal_mailbox.clone(), epocher);
 
         let seed_reporter = SeedReporter::<MinSig>::new(ledger.clone());
         let node_state_reporter = self
@@ -313,13 +388,14 @@ impl NodeRunner for ProductionRunner {
                 replay_buffer: NZUsize!(1024 * 1024),
                 write_buffer: NZUsize!(1024 * 1024),
                 leader_timeout: Duration::from_millis(500),
-                notarization_timeout: Duration::from_secs(1),
-                nullify_retry: Duration::from_secs(2),
+                certification_timeout: Duration::from_secs(1),
+                timeout_retry: Duration::from_secs(2),
                 fetch_timeout: Duration::from_millis(500),
                 activity_timeout: ViewDelta::new(20),
                 skip_timeout: ViewDelta::new(10),
                 fetch_concurrent: 8,
-                buffer_pool,
+                page_cache,
+                forwarding: simplex::ForwardingPolicy::Disabled,
             },
         );
         engine.start(transport.simplex.votes, transport.simplex.certs, transport.simplex.resolver);

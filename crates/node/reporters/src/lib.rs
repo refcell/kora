@@ -4,14 +4,16 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
-use std::{fmt, marker::PhantomData};
+use std::{fmt, marker::PhantomData, sync::Arc};
 
+use alloy_consensus::{Transaction as _, TxEnvelope, transaction::SignerRecoverable as _};
+use alloy_eips::eip2718::Decodable2718 as _;
 use alloy_primitives::{B256, Bytes, keccak256};
 use commonware_consensus::{
     Block as _, Reporter,
     marshal::Update,
     simplex::{
-        scheme::bls12381_threshold::{Scheme, Seedable as _},
+        scheme::bls12381_threshold::vrf::{Scheme, Seedable as _},
         types::Activity,
     },
 };
@@ -20,7 +22,8 @@ use commonware_runtime::{Spawner as _, tokio};
 use commonware_utils::acknowledgement::Acknowledgement as _;
 use kora_consensus::BlockExecution;
 use kora_domain::{Block, ConsensusDigest, PublicKey};
-use kora_executor::{BlockContext, BlockExecutor};
+use kora_executor::{BlockContext, BlockExecutor, ExecutionOutcome};
+use kora_indexer::{BlockIndex, IndexedBlock, IndexedLog, IndexedReceipt, IndexedTransaction};
 use kora_ledger::LedgerService;
 use kora_overlay::OverlayState;
 use kora_qmdb_ledger::QmdbState;
@@ -104,6 +107,7 @@ async fn handle_finalized_update<E, P>(
     context: tokio::Context,
     executor: E,
     provider: P,
+    block_index: Option<Arc<BlockIndex>>,
     update: Update<Block>,
 ) where
     E: BlockExecutor<OverlayState<QmdbState>, Tx = Bytes>,
@@ -113,64 +117,87 @@ async fn handle_finalized_update<E, P>(
         Update::Tip(..) => {}
         Update::Block(block, ack) => {
             let digest = block.commitment();
-            if state.query_state_root(digest).await.is_none() {
-                trace!(?digest, "missing snapshot for finalized block; re-executing");
+            let snapshot_exists = state.query_state_root(digest).await.is_some();
+            let mut execution_outcome = None;
+            let mut execution_context = None;
+
+            if !snapshot_exists || block_index.is_some() {
+                if snapshot_exists {
+                    trace!(?digest, "re-executing finalized block for RPC indexing");
+                } else {
+                    trace!(?digest, "missing snapshot for finalized block; re-executing");
+                }
                 let parent_digest = block.parent();
-                let Some(parent_snapshot) = state.parent_snapshot(parent_digest).await else {
+                if let Some(parent_snapshot) = state.parent_snapshot(parent_digest).await {
+                    let block_context = provider.context(&block);
+                    let execution = match BlockExecution::execute(
+                        &parent_snapshot,
+                        &executor,
+                        &block_context,
+                        &block.txs,
+                    )
+                    .await
+                    {
+                        Ok(result) => result,
+                        Err(err) => {
+                            error!(?digest, error = ?err, "failed to execute finalized block");
+                            ack.acknowledge();
+                            return;
+                        }
+                    };
+
+                    let state_root = match state
+                        .compute_root_from_store(parent_digest, execution.outcome.changes.clone())
+                        .await
+                    {
+                        Ok(root) => root,
+                        Err(err) => {
+                            error!(?digest, error = ?err, "failed to compute qmdb root");
+                            ack.acknowledge();
+                            return;
+                        }
+                    };
+                    if state_root != block.state_root {
+                        warn!(
+                            ?digest,
+                            expected = ?block.state_root,
+                            computed = ?state_root,
+                            "state root mismatch for finalized block"
+                        );
+                        ack.acknowledge();
+                        return;
+                    }
+
+                    if !snapshot_exists {
+                        let merged_changes =
+                            parent_snapshot.state.merge_changes(execution.outcome.changes.clone());
+                        let next_state =
+                            OverlayState::new(parent_snapshot.state.base(), merged_changes);
+                        state
+                            .insert_snapshot(
+                                digest,
+                                parent_digest,
+                                next_state,
+                                state_root,
+                                execution.outcome.changes.clone(),
+                                &block.txs,
+                            )
+                            .await;
+                    }
+
+                    execution_outcome = Some(execution.outcome);
+                    execution_context = Some(block_context);
+                } else if snapshot_exists {
+                    warn!(
+                        ?digest,
+                        ?parent_digest,
+                        "missing parent snapshot for cached finalized block; skipping RPC indexing replay"
+                    );
+                } else {
                     error!(?digest, ?parent_digest, "missing parent snapshot for finalized block");
                     ack.acknowledge();
                     return;
-                };
-                let block_context = provider.context(&block);
-                let execution = match BlockExecution::execute(
-                    &parent_snapshot,
-                    &executor,
-                    &block_context,
-                    &block.txs,
-                )
-                .await
-                {
-                    Ok(result) => result,
-                    Err(err) => {
-                        error!(?digest, error = ?err, "failed to execute finalized block");
-                        ack.acknowledge();
-                        return;
-                    }
-                };
-                let merged_changes =
-                    parent_snapshot.state.merge_changes(execution.outcome.changes.clone());
-                let state_root = match state
-                    .compute_root_from_store(parent_digest, execution.outcome.changes.clone())
-                    .await
-                {
-                    Ok(root) => root,
-                    Err(err) => {
-                        error!(?digest, error = ?err, "failed to compute qmdb root");
-                        ack.acknowledge();
-                        return;
-                    }
-                };
-                if state_root != block.state_root {
-                    warn!(
-                        ?digest,
-                        expected = ?block.state_root,
-                        computed = ?state_root,
-                        "state root mismatch for finalized block"
-                    );
-                    ack.acknowledge();
-                    return;
                 }
-                let next_state = OverlayState::new(parent_snapshot.state.base(), merged_changes);
-                state
-                    .insert_snapshot(
-                        digest,
-                        parent_digest,
-                        next_state,
-                        state_root,
-                        execution.outcome.changes,
-                        &block.txs,
-                    )
-                    .await;
             } else {
                 trace!(?digest, "using cached snapshot for finalized block");
             }
@@ -191,11 +218,145 @@ async fn handle_finalized_update<E, P>(
                 ack.acknowledge();
                 return;
             }
+            if let (Some(index), Some(outcome), Some(block_context)) =
+                (block_index.as_ref(), execution_outcome.as_ref(), execution_context.as_ref())
+            {
+                index_finalized_block(index, &block, block_context, outcome);
+            }
             state.prune_mempool(&block.txs).await;
             // Marshal waits for the application to acknowledge processing before advancing the
             // delivery floor. Without this, the node can stall on finalized block delivery.
             ack.acknowledge();
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct TxMetadata {
+    from: alloy_primitives::Address,
+    to: Option<alloy_primitives::Address>,
+    value: alloy_primitives::U256,
+    gas_limit: u64,
+    gas_price: u128,
+    input: Bytes,
+    nonce: u64,
+}
+
+fn index_finalized_block(
+    index: &BlockIndex,
+    block: &Block,
+    block_context: &BlockContext,
+    outcome: &ExecutionOutcome,
+) {
+    let block_hash = block.id().0;
+    let transaction_hashes = block.txs.iter().map(|tx| keccak256(&tx.bytes)).collect::<Vec<_>>();
+    let tx_metadata = block.txs.iter().map(|tx| decode_tx_metadata(&tx.bytes)).collect::<Vec<_>>();
+
+    let indexed_block = IndexedBlock {
+        hash: block_hash,
+        number: block.height,
+        parent_hash: block.parent.0,
+        state_root: block.state_root.0,
+        timestamp: block_context.header.timestamp,
+        gas_limit: block_context.header.gas_limit,
+        gas_used: outcome.gas_used,
+        base_fee_per_gas: block_context.header.base_fee_per_gas,
+        transaction_hashes,
+    };
+
+    let indexed_txs = tx_metadata
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, metadata)| {
+            let metadata = metadata.as_ref()?;
+            let hash = keccak256(&block.txs[idx].bytes);
+            Some(IndexedTransaction {
+                hash,
+                block_hash,
+                block_number: block.height,
+                index: idx as u64,
+                from: metadata.from,
+                to: metadata.to,
+                value: metadata.value,
+                gas_limit: metadata.gas_limit,
+                gas_price: metadata.gas_price,
+                input: metadata.input.clone(),
+                nonce: metadata.nonce,
+            })
+        })
+        .collect();
+
+    let mut next_log_index = 0u64;
+    let indexed_receipts = outcome
+        .receipts
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, receipt)| {
+            let metadata = tx_metadata.get(idx)?.as_ref()?;
+            let logs = receipt
+                .logs()
+                .iter()
+                .map(|log| {
+                    let (topics, data) = log.data.clone().split();
+                    let log_index = next_log_index;
+                    next_log_index += 1;
+                    IndexedLog { address: log.address, topics, data, log_index }
+                })
+                .collect();
+
+            Some(IndexedReceipt {
+                transaction_hash: receipt.tx_hash,
+                block_hash,
+                block_number: block.height,
+                transaction_index: idx as u64,
+                from: metadata.from,
+                to: metadata.to,
+                cumulative_gas_used: receipt.cumulative_gas_used(),
+                gas_used: receipt.gas_used,
+                contract_address: receipt.contract_address,
+                logs,
+                status: receipt.success(),
+            })
+        })
+        .collect();
+
+    index.insert_block(indexed_block, indexed_txs, indexed_receipts);
+}
+
+fn decode_tx_metadata(tx_bytes: &Bytes) -> Option<TxMetadata> {
+    let envelope = match TxEnvelope::decode_2718(&mut tx_bytes.as_ref()) {
+        Ok(envelope) => envelope,
+        Err(err) => {
+            warn!(error = %err, "failed to decode finalized transaction for indexing");
+            return None;
+        }
+    };
+    let from = match envelope.recover_signer() {
+        Ok(from) => from,
+        Err(err) => {
+            warn!(error = %err, "failed to recover finalized transaction sender for indexing");
+            return None;
+        }
+    };
+
+    Some(TxMetadata {
+        from,
+        to: envelope.to(),
+        value: envelope.value(),
+        gas_limit: envelope.gas_limit(),
+        gas_price: effective_gas_price(&envelope),
+        input: envelope.input().clone(),
+        nonce: envelope.nonce(),
+    })
+}
+
+const fn effective_gas_price(envelope: &TxEnvelope) -> u128 {
+    match envelope {
+        TxEnvelope::Legacy(tx) => tx.tx().gas_price,
+        TxEnvelope::Eip2930(tx) => tx.tx().gas_price,
+        TxEnvelope::Eip1559(tx) => tx.tx().max_fee_per_gas,
+        TxEnvelope::Eip4844(tx) => tx.tx().tx().max_fee_per_gas,
+        TxEnvelope::Eip7702(tx) => tx.tx().max_fee_per_gas,
     }
 }
 
@@ -210,6 +371,8 @@ pub struct FinalizedReporter<E, P> {
     executor: E,
     /// Provider that builds block execution context.
     provider: P,
+    /// Optional RPC block index updated after finalized blocks are persisted.
+    block_index: Option<Arc<BlockIndex>>,
 }
 
 impl<E, P> fmt::Debug for FinalizedReporter<E, P> {
@@ -230,7 +393,14 @@ where
         executor: E,
         provider: P,
     ) -> Self {
-        Self { state, context, executor, provider }
+        Self { state, context, executor, provider, block_index: None }
+    }
+
+    /// Attach the RPC-visible block index to update when blocks finalize.
+    #[must_use]
+    pub fn with_block_index(mut self, block_index: Arc<BlockIndex>) -> Self {
+        self.block_index = Some(block_index);
+        self
     }
 }
 
@@ -246,8 +416,9 @@ where
         let context = self.context.clone();
         let executor = self.executor.clone();
         let provider = self.provider.clone();
+        let block_index = self.block_index.clone();
         async move {
-            handle_finalized_update(state, context, executor, provider, update).await;
+            handle_finalized_update(state, context, executor, provider, block_index, update).await;
         }
     }
 }

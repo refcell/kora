@@ -122,6 +122,19 @@ impl BlockIndex {
         self.transactions.read().get(hash).cloned()
     }
 
+    /// Gets all indexed transactions for a block in transaction-index order.
+    pub fn get_transactions_for_block(&self, block_hash: &B256) -> Vec<IndexedTransaction> {
+        let mut txs = self
+            .transactions
+            .read()
+            .values()
+            .filter(|tx| tx.block_hash == *block_hash)
+            .cloned()
+            .collect::<Vec<_>>();
+        txs.sort_by_key(|tx| tx.index);
+        txs
+    }
+
     /// Gets a receipt by its transaction hash.
     pub fn get_receipt(&self, hash: &B256) -> Option<IndexedReceipt> {
         self.receipts.read().get(hash).cloned()

@@ -4,15 +4,14 @@ use std::time::Duration;
 
 use commonware_consensus::{
     CertifiableAutomaton, Relay, Reporter,
-    simplex::{self, elector::Random, types::Activity},
+    simplex::{self, ForwardingPolicy, Plan, elector::Random, types::Activity},
     types::{Epoch, ViewDelta},
 };
 use commonware_cryptography::{Digest, certificate::Scheme};
 use commonware_p2p::Blocker;
 use commonware_parallel::Sequential;
+use commonware_runtime::buffer::paged::CacheRef;
 use commonware_utils::NZUsize;
-
-use crate::DefaultPool;
 
 /// Default mailbox size for internal consensus channels.
 pub const DEFAULT_MAILBOX_SIZE: usize = 1024;
@@ -68,6 +67,7 @@ impl DefaultConfig {
     #[allow(clippy::type_complexity)]
     pub fn init<S, B, D, A, R, F>(
         partition: impl Into<String>,
+        page_cache: CacheRef,
         scheme: S,
         blocker: B,
         automaton: A,
@@ -80,7 +80,7 @@ impl DefaultConfig {
         B: Blocker<PublicKey = S::PublicKey>,
         D: Digest,
         A: CertifiableAutomaton<Context = simplex::types::Context<D, S::PublicKey>, Digest = D>,
-        R: Relay<Digest = D>,
+        R: Relay<Digest = D, PublicKey = S::PublicKey, Plan = Plan<S::PublicKey>>,
         F: Reporter<Activity = Activity<S, D>>,
     {
         simplex::Config {
@@ -96,14 +96,15 @@ impl DefaultConfig {
             epoch: Epoch::zero(),
             replay_buffer: NZUsize!(DEFAULT_REPLAY_BUFFER),
             write_buffer: NZUsize!(DEFAULT_WRITE_BUFFER),
-            buffer_pool: DefaultPool::init(),
             leader_timeout: DEFAULT_LEADER_TIMEOUT,
-            notarization_timeout: DEFAULT_NOTARIZATION_TIMEOUT,
-            nullify_retry: DEFAULT_NULLIFY_RETRY,
+            certification_timeout: DEFAULT_NOTARIZATION_TIMEOUT,
+            timeout_retry: DEFAULT_NULLIFY_RETRY,
             fetch_timeout: DEFAULT_FETCH_TIMEOUT,
             activity_timeout: DEFAULT_ACTIVITY_TIMEOUT,
             skip_timeout: DEFAULT_SKIP_TIMEOUT,
             fetch_concurrent: DEFAULT_FETCH_CONCURRENT,
+            page_cache,
+            forwarding: ForwardingPolicy::Disabled,
         }
     }
 }

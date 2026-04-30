@@ -44,6 +44,11 @@ Start the devnet with interactive DKG (Distributed Key Generation):
 just devnet
 ```
 
+The Docker devnet starts four validator nodes plus one secondary peer. Secondary
+peers are authenticated Commonware P2P nodes that follow validator traffic without
+participating in consensus. See the [Docker devnet README](./docker/README.md#secondary-peers)
+for how a secondary peer joins the network.
+
 > [!TIP]
 > See the [Justfile](./Justfile) for other useful commands.
 
@@ -53,7 +58,7 @@ https://github.com/user-attachments/assets/8ea05477-039d-4dd2-a7f3-660f179299f7
 
 ## Architecture
 
-The devnet runs in three phases. Phase 0 generates ed25519 identity keys for each validator node. Phase 1 is the DKG ceremony, an interactive threshold key generation process using Ed25519 simplex consensus where validators collaborate to generate a shared BLS12-381 threshold key. Phase 2 launches full validator nodes running BLS12-381 threshold consensus, the REVM execution engine, and QMDB state storage.
+The devnet runs in three phases. Phase 0 generates ed25519 identity keys for each validator node and the built-in secondary peer. Phase 1 is the DKG ceremony, an interactive threshold key generation process using Ed25519 simplex consensus where validators collaborate to generate a shared BLS12-381 threshold key. Phase 2 launches full validator nodes running BLS12-381 threshold consensus, the REVM execution engine, and QMDB state storage, then starts the secondary peer as a non-voting P2P follower.
 
 Observability is provided through Prometheus metrics with Grafana dashboards for monitoring node health, consensus performance, and execution metrics.
 

@@ -3,7 +3,7 @@
 use std::num::{NonZeroU16, NonZeroU64, NonZeroUsize};
 
 use commonware_codec::Codec;
-use commonware_runtime::{Clock, Metrics, Spawner, Storage, buffer::PoolRef};
+use commonware_runtime::{BufferPooler, Clock, Metrics, Spawner, Storage, buffer::paged::CacheRef};
 use commonware_storage::archive::immutable::{Archive, Config};
 use commonware_utils::{NZU16, NZU64, NZUsize, sequence::Array};
 
@@ -65,7 +65,7 @@ impl ArchiveInitializer {
         codec_config: V::Cfg,
     ) -> Result<Archive<E, K, V>, commonware_storage::archive::Error>
     where
-        E: Spawner + Storage + Metrics + Clock + Clone,
+        E: BufferPooler + Spawner + Storage + Metrics + Clock + Clone,
         K: Array,
         V: Codec + Send + Sync,
     {
@@ -77,7 +77,8 @@ impl ArchiveInitializer {
             freezer_table_resize_frequency: Self::DEFAULT_FREEZER_TABLE_RESIZE_FREQUENCY,
             freezer_table_resize_chunk_size: Self::DEFAULT_FREEZER_TABLE_RESIZE_CHUNK_SIZE,
             freezer_key_partition: format!("{prefix}-freezer-key"),
-            freezer_key_buffer_pool: PoolRef::new(
+            freezer_key_page_cache: CacheRef::from_pooler(
+                &ctx,
                 Self::DEFAULT_PAGE_SIZE,
                 Self::DEFAULT_PAGE_CACHE_SIZE,
             ),
@@ -103,7 +104,7 @@ impl ArchiveInitializer {
         codec_config: V::Cfg,
     ) -> Result<Archive<E, K, V>, commonware_storage::archive::Error>
     where
-        E: Spawner + Storage + Metrics + Clock + Clone,
+        E: BufferPooler + Spawner + Storage + Metrics + Clock + Clone,
         K: Array,
         V: Codec + Send + Sync,
     {
@@ -118,7 +119,7 @@ impl ArchiveInitializer {
         codec_config: V::Cfg,
     ) -> Result<Archive<E, K, V>, commonware_storage::archive::Error>
     where
-        E: Spawner + Storage + Metrics + Clock + Clone,
+        E: BufferPooler + Spawner + Storage + Metrics + Clock + Clone,
         K: Array,
         V: Codec + Send + Sync,
     {

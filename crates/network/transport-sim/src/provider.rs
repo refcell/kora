@@ -9,6 +9,7 @@ use std::{
 use commonware_cryptography::PublicKey;
 use commonware_p2p::{Manager as _, simulated};
 use commonware_runtime::{Quota, tokio};
+use commonware_utils::NZUsize;
 use kora_config::NodeConfig;
 use kora_service::TransportProvider;
 use kora_transport::{
@@ -77,7 +78,7 @@ impl<P: PublicKey> SimControl<P> {
         epoch: u64,
         validators: commonware_utils::ordered::Set<P>,
     ) {
-        self.manager().update(epoch, validators).await;
+        self.manager().track(epoch, validators).await;
     }
 
     /// Returns a peer control handle for channel registration.
@@ -160,7 +161,8 @@ pub fn create_sim_network<P: PublicKey>(
     max_size: u32,
     disconnect_on_block: bool,
 ) -> SimControl<P> {
-    let config = simulated::Config { max_size, disconnect_on_block, tracked_peer_sets: None };
+    let config =
+        simulated::Config { max_size, disconnect_on_block, tracked_peer_sets: NZUsize!(4) };
 
     let (network, oracle) = simulated::Network::new(context, config);
     network.start();

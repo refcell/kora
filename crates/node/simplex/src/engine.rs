@@ -2,15 +2,15 @@
 
 use commonware_consensus::{
     CertifiableAutomaton, Relay, Reporter,
-    simplex::{self, elector::Random, types::Activity},
+    simplex::{self, Plan, elector::Random, types::Activity},
 };
 use commonware_cryptography::Digest;
 use commonware_p2p::{Blocker, Receiver, Sender};
 use commonware_parallel::Sequential;
-use commonware_runtime::{Clock, Handle, Metrics, Spawner, Storage};
+use commonware_runtime::{BufferPooler, Clock, Handle, Metrics, Spawner, Storage};
 use rand_core::CryptoRngCore;
 
-use crate::DefaultConfig;
+use crate::{DefaultConfig, DefaultPool};
 
 /// The default simplex engine constructor.
 ///
@@ -47,13 +47,13 @@ impl DefaultEngine {
         resolver_network: (RS, RR),
     ) -> Handle<()>
     where
-        E: Clock + CryptoRngCore + Spawner + Storage + Metrics,
+        E: BufferPooler + Clock + CryptoRngCore + Spawner + Storage + Metrics,
         S: simplex::scheme::Scheme<D>,
         Random: simplex::elector::Config<S>,
         B: Blocker<PublicKey = S::PublicKey>,
         D: Digest,
         A: CertifiableAutomaton<Context = simplex::types::Context<D, S::PublicKey>, Digest = D>,
-        R: Relay<Digest = D>,
+        R: Relay<Digest = D, PublicKey = S::PublicKey, Plan = Plan<S::PublicKey>>,
         F: Reporter<Activity = Activity<S, D>>,
         VS: Sender<PublicKey = S::PublicKey>,
         VR: Receiver<PublicKey = S::PublicKey>,
@@ -62,8 +62,9 @@ impl DefaultEngine {
         RS: Sender<PublicKey = S::PublicKey>,
         RR: Receiver<PublicKey = S::PublicKey>,
     {
+        let page_cache = DefaultPool::init(&context);
         let config: simplex::Config<S, Random, B, D, A, R, F, Sequential> =
-            DefaultConfig::init(partition, scheme, blocker, automaton, relay, reporter);
+            DefaultConfig::init(partition, page_cache, scheme, blocker, automaton, relay, reporter);
         let engine = simplex::Engine::new(context, config);
         engine.start(vote_network, certificate_network, resolver_network)
     }

@@ -4,17 +4,26 @@ use std::time::Duration;
 
 use commonware_consensus::{
     Block,
-    marshal::{
-        ingress::handler::{Message, Request},
-        resolver::p2p::Config,
+    marshal::resolver::{
+        handler::{Message, Request},
+        p2p::Config,
     },
 };
-use commonware_cryptography::PublicKey;
-use commonware_p2p::{Blocker, Manager, Receiver, Sender};
+use commonware_cryptography::{Digestible, PublicKey};
+use commonware_p2p::{Blocker, Provider, Receiver, Sender};
 use commonware_resolver::p2p;
-use commonware_runtime::{Clock, Metrics, Spawner};
-use futures::channel::mpsc;
+use commonware_runtime::{BufferPooler, Clock, Metrics, Spawner};
+use commonware_utils::channel::mpsc;
 use rand::Rng;
+
+/// Receiver for inbound resolver messages.
+pub type ResolverReceiver<B> = mpsc::Receiver<Message<<B as Digestible>::Digest>>;
+
+/// Mailbox used to submit resolver requests.
+pub type ResolverMailbox<B, P> = p2p::Mailbox<Request<<B as Digestible>::Digest>, P>;
+
+/// Resolver channels returned by peer initialization.
+pub type ResolverChannels<B, P> = (ResolverReceiver<B>, ResolverMailbox<B, P>);
 
 /// Initializes the p2p resolver with the given parameters.
 #[derive(Debug, Clone)]
@@ -45,14 +54,14 @@ impl PeerInitializer {
     pub fn init<E, C, Bl, B, S, R, P>(
         ctx: &E,
         public_key: P,
-        manager: C,
+        peer_provider: C,
         blocker: Bl,
         backfill: (S, R),
-    ) -> (mpsc::Receiver<Message<B>>, p2p::Mailbox<Request<B>, P>)
+    ) -> ResolverChannels<B, P>
     where
-        E: Rng + Spawner + Clock + Metrics,
+        E: BufferPooler + Rng + Spawner + Clock + Metrics,
         P: PublicKey,
-        C: Manager<PublicKey = P>,
+        C: Provider<PublicKey = P>,
         Bl: Blocker<PublicKey = P>,
         B: Block,
         S: Sender<PublicKey = P>,
@@ -60,7 +69,7 @@ impl PeerInitializer {
     {
         let resolver_cfg = Config {
             public_key,
-            manager,
+            peer_provider,
             blocker,
             mailbox_size: Self::DEFAULT_MAILBOX_SIZE,
             initial: Self::DEFAULT_INITIAL_DELAY,

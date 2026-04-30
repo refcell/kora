@@ -93,12 +93,14 @@ mod tests {
 
     #[test]
     fn parent_block_from_header() {
-        let mut header = Header::default();
-        header.number = 100;
-        header.timestamp = 1234567890;
-        header.gas_limit = 30_000_000;
-        header.gas_used = 15_000_000;
-        header.base_fee_per_gas = Some(1000);
+        let header = Header {
+            number: 100,
+            timestamp: 1234567890,
+            gas_limit: 30_000_000,
+            gas_used: 15_000_000,
+            base_fee_per_gas: Some(1000),
+            ..Header::default()
+        };
 
         let hash = B256::repeat_byte(0xab);
         let parent = ParentBlock::from_header(&header, hash);

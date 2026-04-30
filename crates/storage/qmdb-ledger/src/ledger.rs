@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use alloy_primitives::{Address, U256};
+use alloy_primitives::{Address, B256, U256};
 use commonware_runtime::tokio::Context;
 use kora_backend::{
     AccountStore, CodeStore, CommonwareBackend, CommonwareRootProvider, QmdbBackendConfig,
@@ -8,6 +8,7 @@ use kora_backend::{
 };
 use kora_domain::StateRoot;
 use kora_handlers::{HandleError, QmdbHandle, QmdbRefDb as HandlerQmdbRefDb};
+use kora_qmdb::StateRoot as QmdbStateRoot;
 use kora_traits::{StateDb, StateDbWrite};
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -80,7 +81,19 @@ impl QmdbLedger {
 
     /// Commits the provided changes to QMDB and returns the resulting root.
     pub async fn commit_changes(&self, changes: QmdbChangeSet) -> Result<StateRoot, Error> {
-        let root = StateDbWrite::commit(&self.handle, changes).await?;
+        let _storage_access = self.handle.storage_access().await;
+        let mut store = self.handle.write().await;
+        store
+            .commit_changes(changes)
+            .await
+            .map_err(|e| kora_traits::StateDbError::Storage(e.to_string()))?;
+        let stores =
+            store.stores().map_err(|e| kora_traits::StateDbError::Storage(e.to_string()))?;
+        let root = QmdbStateRoot::compute(
+            B256::from_slice(stores.accounts.root()?.as_ref()),
+            B256::from_slice(stores.storage.root()?.as_ref()),
+            B256::from_slice(stores.code.root()?.as_ref()),
+        );
         Ok(StateRoot(root))
     }
 

@@ -3,7 +3,8 @@
 use commonware_broadcast::buffered::{Config, Engine, Mailbox};
 use commonware_codec::Codec;
 use commonware_cryptography::{Committable, Digestible, PublicKey};
-use commonware_runtime::{Clock, Metrics, Spawner};
+use commonware_p2p::Provider;
+use commonware_runtime::{BufferPooler, Clock, Metrics, Spawner};
 
 /// Initializes the buffered broadcast engine with sensible defaults.
 #[derive(Debug, Clone, Copy)]
@@ -24,15 +25,17 @@ impl BroadcastInitializer {
     /// Initializes the buffered broadcast engine.
     ///
     /// Returns the engine and a mailbox for sending messages.
-    pub fn init<E, P, M>(
+    pub fn init<E, P, M, D>(
         ctx: E,
         public_key: P,
+        peer_provider: D,
         codec_config: M::Cfg,
-    ) -> (Engine<E, P, M>, Mailbox<P, M>)
+    ) -> (Engine<E, P, M, D>, Mailbox<P, M>)
     where
-        E: Clock + Spawner + Metrics,
+        E: BufferPooler + Clock + Spawner + Metrics,
         P: PublicKey,
         M: Committable + Digestible + Codec,
+        D: Provider<PublicKey = P>,
     {
         let config = Config {
             public_key,
@@ -40,6 +43,7 @@ impl BroadcastInitializer {
             deque_size: Self::DEFAULT_DEQUE_SIZE,
             priority: Self::DEFAULT_PRIORITY,
             codec_config,
+            peer_provider,
         };
         Engine::new(ctx, config)
     }

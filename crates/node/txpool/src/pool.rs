@@ -6,7 +6,7 @@ use std::{
 };
 
 use alloy_consensus::{Transaction, TxEnvelope};
-use alloy_eips::eip2718::Decodable2718;
+use alloy_eips::eip2718::{Decodable2718, Encodable2718};
 use alloy_primitives::{Address, B256, Bytes};
 use kora_domain::{Tx, TxId};
 use parking_lot::RwLock;
@@ -240,7 +240,7 @@ fn current_timestamp() -> u64 {
 fn tx_to_ordered(tx: &Tx) -> Option<OrderedTransaction> {
     let envelope = TxEnvelope::decode_2718(&mut tx.bytes.as_ref()).ok()?;
     let sender = recover_sender_from_envelope(&envelope).ok()?;
-    let hash = alloy_primitives::keccak256(alloy_rlp::encode(&envelope));
+    let hash = alloy_primitives::keccak256(&tx.bytes);
     let nonce = envelope.nonce();
     let effective_gas_price = match &envelope {
         TxEnvelope::Legacy(tx) => tx.tx().gas_price,
@@ -305,7 +305,9 @@ impl Mempool for TransactionPool {
 
             if tx.nonce == expected_nonce {
                 included_senders.insert(tx.sender, tx.nonce + 1);
-                result.push(Tx::new(Bytes::from(alloy_rlp::encode(&tx.envelope))));
+                let mut raw = Vec::new();
+                tx.envelope.encode_2718(&mut raw);
+                result.push(Tx::new(Bytes::from(raw)));
             }
         }
 
@@ -328,10 +330,10 @@ impl Mempool for TransactionPool {
         }
 
         for sender in senders_to_check {
-            if let Some(queue) = inner.by_sender.get(&sender) {
-                if queue.is_empty() {
-                    inner.by_sender.remove(&sender);
-                }
+            if let Some(queue) = inner.by_sender.get(&sender)
+                && queue.is_empty()
+            {
+                inner.by_sender.remove(&sender);
             }
         }
 

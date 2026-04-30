@@ -9,7 +9,7 @@ use std::{collections::BTreeSet, fmt, sync::Arc};
 
 use alloy_primitives::{Address, B256, U256};
 use commonware_cryptography::Committable as _;
-use commonware_runtime::{Metrics as _, buffer::PoolRef, tokio};
+use commonware_runtime::{Metrics as _, tokio};
 use futures::{channel::mpsc::UnboundedReceiver, lock::Mutex};
 use kora_consensus::{
     ConsensusError, Mempool as _, SeedTracker as _, Snapshot, SnapshotStore as _,
@@ -19,8 +19,9 @@ use kora_domain::{
     Block, BlockId, ConsensusDigest, LedgerEvent, LedgerEvents, StateRoot, Tx, TxId,
 };
 use kora_overlay::OverlayState;
+use kora_qmdb::StateRoot as QmdbStateRoot;
 use kora_qmdb_ledger::{Error as QmdbError, QmdbChangeSet, QmdbConfig, QmdbLedger, QmdbState};
-use kora_traits::{StateDbError, StateDbRead, StateDbWrite};
+use kora_traits::{StateDbError, StateDbRead};
 use thiserror::Error;
 
 /// Snapshot type used by the ledger.
@@ -78,11 +79,10 @@ impl LedgerView {
     /// Initialize a ledger view with a QMDB backend built from the provided settings.
     pub async fn init(
         context: tokio::Context,
-        buffer_pool: PoolRef,
         partition_prefix: String,
         genesis_alloc: Vec<(Address, U256)>,
     ) -> LedgerResult<Self> {
-        let config = QmdbConfig::new(partition_prefix, buffer_pool);
+        let config = QmdbConfig::new(partition_prefix);
         Self::init_with_config(context, config, genesis_alloc).await
     }
 
@@ -129,6 +129,16 @@ impl LedgerView {
     /// Return the genesis block of this ledger.
     pub fn genesis_block(&self) -> Block {
         self.genesis_block.clone()
+    }
+
+    /// Return a cloneable handle to the underlying QMDB state.
+    ///
+    /// The returned handle shares the same backing store and can be used
+    /// for read-only queries (balance, nonce, code, storage) without
+    /// acquiring the ledger mutex.
+    pub async fn qmdb_state(&self) -> QmdbState {
+        let inner = self.inner.lock().await;
+        inner.qmdb.state()
     }
 
     /// Submit a transaction into the mempool.
@@ -219,19 +229,17 @@ impl LedgerView {
         self.compute_root_from_store(parent, changes).await
     }
 
-    /// Compute a root using the persisted QMDB store plus any pending changes.
+    /// Compute the deterministic consensus root for a state transition.
     pub async fn compute_root_from_store(
         &self,
         parent: ConsensusDigest,
         changes: QmdbChangeSet,
     ) -> LedgerResult<StateRoot> {
-        let (changes, state) = {
+        let parent_root = {
             let inner = self.inner.lock().await;
-            let changes = inner.snapshots.merged_changes(parent, changes)?;
-            (changes, inner.qmdb.state())
+            inner.snapshots.get(&parent).ok_or(ConsensusError::SnapshotNotFound(parent))?.state_root
         };
-        let root = state.compute_root(&changes).await?;
-        Ok(StateRoot(root))
+        Ok(StateRoot(QmdbStateRoot::transition(parent_root.0, &changes)))
     }
 
     /// Persist `digest` and any missing ancestors to QMDB.
@@ -413,8 +421,7 @@ mod tests {
     use alloy_consensus::Header;
     use alloy_primitives::{Address, B256, Bytes, U256};
     use commonware_cryptography::Committable as _;
-    use commonware_runtime::{Runner, buffer::PoolRef, tokio};
-    use commonware_utils::{NZU16, NZUsize};
+    use commonware_runtime::{Runner, tokio};
     use k256::ecdsa::SigningKey;
     use kora_domain::{Block, ConsensusDigest, Tx, evm::Evm};
     use kora_executor::{BlockContext, BlockExecutor, RevmExecutor};
@@ -425,8 +432,6 @@ mod tests {
 
     static PARTITION_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-    const BUFFER_BLOCK_BYTES: u16 = 16_384;
-    const BUFFER_BLOCK_COUNT: usize = 10_000;
     const GENESIS_BALANCE: u64 = 1_000_000;
     const DUPLICATE_BALANCE: u64 = 500_000;
     const TRANSFER_ONE: u64 = 10;
@@ -465,10 +470,6 @@ mod tests {
         format!("{prefix}-{id}")
     }
 
-    fn test_buffer_pool() -> PoolRef {
-        PoolRef::new(NZU16!(BUFFER_BLOCK_BYTES), NZUsize!(BUFFER_BLOCK_COUNT))
-    }
-
     fn transfer_tx(from_key: &SigningKey, to: Address, value: u64, nonce: u64) -> Tx {
         Evm::sign_eip1559_transfer(
             from_key,
@@ -497,14 +498,9 @@ mod tests {
         partition_prefix: &str,
         allocations: Vec<(Address, U256)>,
     ) -> LedgerSetup {
-        let ledger = LedgerView::init(
-            context,
-            test_buffer_pool(),
-            next_partition(partition_prefix),
-            allocations,
-        )
-        .await
-        .expect("init ledger");
+        let ledger = LedgerView::init(context, next_partition(partition_prefix), allocations)
+            .await
+            .expect("init ledger");
         let service = LedgerService::new(ledger.clone());
         let genesis = service.genesis_block();
         let genesis_digest = genesis.commitment();
@@ -591,6 +587,51 @@ mod tests {
             let result = qmdb.state().balance(&to).await.expect("balance");
             assert_eq!(result, U256::from(TRANSFER_ONE + TRANSFER_TWO));
             assert_eq!(state_root, block2.block.state_root);
+        });
+    }
+
+    #[test]
+    fn empty_child_inherits_parent_state_root_after_persist() {
+        // Tokio runtime required for WrapDatabaseAsync in the QMDB adapter.
+        let executor = tokio::Runner::default();
+        executor.start(|context| async move {
+            // Arrange: create and persist a non-empty parent, matching the timing that can differ
+            // across validators during consensus.
+            let from_key = key_from_byte(FROM_BYTE_A);
+            let to_key = key_from_byte(TO_BYTE_A);
+            let from = Evm::address_from_key(&from_key);
+            let to = Evm::address_from_key(&to_key);
+            let setup = setup_ledger(
+                context,
+                "revm-ledger-empty-child",
+                vec![(from, U256::from(GENESIS_BALANCE)), (to, U256::ZERO)],
+            )
+            .await;
+            let parent_snapshot = setup
+                .service
+                .parent_snapshot(setup.genesis_digest)
+                .await
+                .expect("genesis snapshot");
+            let parent = build_block_snapshot(
+                &setup.service,
+                &setup.genesis,
+                parent_snapshot,
+                HEIGHT_ONE,
+                vec![transfer_tx(&from_key, to, TRANSFER_ONE, 0)],
+            )
+            .await;
+            assert!(setup.ledger.persist_snapshot(parent.digest).await.expect("persist"));
+
+            // Act: an empty child has no state transition and must not recompute a new QMDB root
+            // from local persistence metadata.
+            let empty_root = setup
+                .service
+                .compute_root(parent.digest, Default::default())
+                .await
+                .expect("compute empty child root");
+
+            // Assert
+            assert_eq!(empty_root, parent.block.state_root);
         });
     }
 

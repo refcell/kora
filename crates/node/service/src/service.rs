@@ -55,7 +55,9 @@ where
         R::Error: Into<eyre::Error>,
         T::Error: Into<eyre::Error>,
     {
-        let executor = tokio::Runner::default();
+        let executor = tokio::Runner::new(
+            tokio::Config::default().with_storage_directory(self.config.data_dir.join("runtime")),
+        );
         executor.start(|context| async move { self.run_with_context(context).await })
     }
 
@@ -94,7 +96,9 @@ impl LegacyNodeService {
 
     /// Run the legacy node service.
     pub fn run(self) -> eyre::Result<()> {
-        let executor = tokio::Runner::default();
+        let executor = tokio::Runner::new(
+            tokio::Config::default().with_storage_directory(self.config.data_dir.join("runtime")),
+        );
         executor.start(|context| async move { self.run_with_context(context).await })
     }
 
@@ -113,10 +117,10 @@ impl LegacyNodeService {
 
         let validators = self.config.consensus.build_validator_set()?;
         if !validators.is_empty() {
-            let validator_set = validators
+            let validator_set: commonware_utils::ordered::Set<_> = validators
                 .try_into()
                 .map_err(|_| eyre::eyre!("failed to convert validator set"))?;
-            transport.oracle.update(0, validator_set).await;
+            transport.oracle.track(0, validator_set).await;
             tracing::info!("registered validators with oracle");
         }
 
